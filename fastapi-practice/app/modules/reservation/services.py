@@ -61,7 +61,6 @@ class ReservationService:
 
         if reservation.status not in (
             ReservationStatus.PENDING,
-            ReservationStatus.NOTIFIED,
         ):
             raise ConflictError("Reservation is already fulfilled or cancelled")
 

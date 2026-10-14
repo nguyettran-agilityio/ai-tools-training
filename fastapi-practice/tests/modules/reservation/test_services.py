@@ -6,6 +6,7 @@ database, no session, no `TestClient`. Compare with
 # Standard library
 import asyncio
 import uuid
+from datetime import UTC, datetime
 
 # Third-party
 import pytest
@@ -16,7 +17,11 @@ from app.core.notifications import InMemoryNotifier
 from app.core.schemas import PaginationParams
 from app.modules.reservation.schemas import ReservationCreate
 from app.modules.reservation.services import ReservationService
-from tests.fakes import FakeBookRepository, FakeReservationRepository, FakeUserRepository
+from tests.fakes import (
+    FakeBookRepository,
+    FakeReservationRepository,
+    FakeUserRepository,
+)
 
 
 @pytest.fixture
@@ -41,7 +46,9 @@ def notifier():
 
 @pytest.fixture
 def service(reservation_repository, book_repository, user_repository, notifier):
-    return ReservationService(reservation_repository, book_repository, user_repository, notifier)
+    return ReservationService(
+        reservation_repository, book_repository, user_repository, notifier
+    )
 
 
 def _make_book(book_repository):
@@ -83,10 +90,22 @@ class TestCreate:
 
 
 class TestCancel:
-    def test_cancels_the_callers_own_pending_reservation(self, service, book_repository):
+    def test_cancels_the_callers_own_pending_reservation(
+        self, service, book_repository
+    ):
         book = _make_book(book_repository)
         user_id = uuid.uuid4()
         reservation = service.create(user_id, ReservationCreate(book_id=book.id))
+
+        service.cancel(user_id, reservation.id)
+
+        assert reservation_status(service, reservation.id) == "cancelled"
+
+    def test_cancels_a_notified_reservation(self, service, book_repository):
+        book = _make_book(book_repository)
+        user_id = uuid.uuid4()
+        reservation = service.create(user_id, ReservationCreate(book_id=book.id))
+        service.reservation_repository.mark_notified(reservation.id, datetime.now(UTC))
 
         service.cancel(user_id, reservation.id)
 
@@ -96,7 +115,9 @@ class TestCancel:
         with pytest.raises(NotFoundError):
             service.cancel(uuid.uuid4(), uuid.uuid4())
 
-    def test_cancelling_someone_elses_reservation_raises_forbidden(self, service, book_repository):
+    def test_cancelling_someone_elses_reservation_raises_forbidden(
+        self, service, book_repository
+    ):
         book = _make_book(book_repository)
         owner = uuid.uuid4()
         reservation = service.create(owner, ReservationCreate(book_id=book.id))
@@ -120,7 +141,9 @@ class TestMyReservations:
     def test_pages_through_the_callers_own_reservations(self, service, book_repository):
         user_id = uuid.uuid4()
         for _ in range(3):
-            service.create(user_id, ReservationCreate(book_id=_make_book(book_repository).id))
+            service.create(
+                user_id, ReservationCreate(book_id=_make_book(book_repository).id)
+            )
 
         page = service.my_reservations(user_id, PaginationParams(page=1, page_size=2))
 
