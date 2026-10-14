@@ -1,0 +1,31 @@
+# Python
+__pycache__/
+*.py[cod]
+
+# Tool caches
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# Coverage
+.coverage
+.coverage.*
+htmlcov/
+
+# Virtual environment
+.venv/
+
+# Environment & secrets (keep the template)
+.env
+.env.*
+!.env.example
+
+# Database files
+*.db
+*.sqlite3
+*.db-journal
+
+# Editors / OS
+.vscode/
+.idea/
+.DS_Store
