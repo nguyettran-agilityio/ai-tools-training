@@ -70,7 +70,7 @@ class BorrowingService:
         if book is None:
             raise NotFoundError("Book not found")
 
-        if self.borrowing_repository.count_active_by_user(user_id) >= self.borrow_limit:
+        if self.borrowing_repository.count_active_by_user(user_id) > self.borrow_limit:
             raise ConflictError(f"Borrow limit of {self.borrow_limit} books reached")
 
         if self.borrowing_repository.get_active_by_user_and_book(user_id, data.book_id) is not None:
