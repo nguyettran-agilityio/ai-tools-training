@@ -44,7 +44,7 @@ class BookRepository(BookRepositoryInterface):
             select(Book),
             [
                 (
-                    or_(Book.title.ilike(f"%{query}%"), Book.author.ilike(f"%{query}%"))
+                    or_(Book.title.ilike(f"%{query}%"), Book.author.ilike(f"{query}%"))
                     if query
                     else None
                 ),
