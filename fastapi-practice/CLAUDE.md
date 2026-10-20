@@ -5,13 +5,14 @@ Library management API (FastAPI, SQLModel, SQLite). When extending a module, mat
 ## Commands
 
 ```bash
+# from repo root: cd fastapi-practice
 uv sync
 uv run alembic upgrade head   # human-run only, see Migrations
 uv run fastapi dev
 uv run pytest                 # ok: "N passed"
 uv run ruff check . && uv run ruff format <changed .py files>   # ok: "All checks passed!"
 uv run mypy                   # app/ and tests/; ok: "Success: no issues found in N source files"
-uv run pre-commit run --all-files
+uv run pre-commit run --all-files   # config: ../.pre-commit-config.yaml (git root), scoped to fastapi-practice/
 ```
 
 - Smoke check: `curl http://127.0.0.1:8000/health`.
