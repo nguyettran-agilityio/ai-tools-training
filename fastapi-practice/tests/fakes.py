@@ -264,6 +264,7 @@ class FakeBorrowingRepository(BorrowingRepositoryInterface):
             borrowed_at=data["borrowed_at"],
             due_date=data["due_date"],
             returned_at=data.get("returned_at"),
+            renewed_at=data.get("renewed_at"),
         )
         self._rows[borrowing.id] = borrowing
         return borrowing
@@ -278,6 +279,11 @@ class FakeBorrowingRepository(BorrowingRepositoryInterface):
 
     def mark_returned(self, id: uuid.UUID, returned_at: datetime) -> BorrowingRead:
         return self.update(id, {"returned_at": returned_at})
+
+    def mark_renewed(
+        self, id: uuid.UUID, due_date: datetime, renewed_at: datetime
+    ) -> BorrowingRead:
+        return self.update(id, {"due_date": due_date, "renewed_at": renewed_at})
 
 
 class FakeReservationRepository(ReservationRepositoryInterface):
@@ -331,6 +337,15 @@ class FakeReservationRepository(ReservationRepositoryInterface):
             1
             for row in self._rows.values()
             if row.book_id == book_id
+            and row.status in (ReservationStatus.PENDING, ReservationStatus.NOTIFIED)
+        )
+
+    def count_open_by_book_excluding_user(self, book_id: uuid.UUID, user_id: uuid.UUID) -> int:
+        return sum(
+            1
+            for row in self._rows.values()
+            if row.book_id == book_id
+            and row.user_id != user_id
             and row.status in (ReservationStatus.PENDING, ReservationStatus.NOTIFIED)
         )
 

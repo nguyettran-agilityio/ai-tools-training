@@ -40,6 +40,7 @@ class BorrowingRead(CamelModel):
     borrowed_at: datetime
     due_date: datetime
     returned_at: datetime | None
+    renewed_at: datetime | None = None
 
     # Datetimes here are assumed UTC-aware — naive-vs-aware normalization
     # happens once in `mappers.py::to_borrowing_read`, not this schema.

@@ -151,6 +151,7 @@ def get_borrowing_service(
         user_repository,
         settings.borrow_limit,
         settings.loan_duration_days,
+        settings.renewal_days,
         get_notifier(),
     )
 

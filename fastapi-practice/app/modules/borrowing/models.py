@@ -20,4 +20,7 @@ class Borrowing(SQLModel, table=True):
     borrowed_at: datetime
     due_date: datetime
     returned_at: datetime | None = None
+    # Set once by `BorrowingService.renew`; `None` means the loan was never
+    # renewed, which is all the "renew at most once" rule needs.
+    renewed_at: datetime | None = None
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))

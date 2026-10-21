@@ -126,3 +126,12 @@ def return_book(
     background_tasks.add_task(reservation_service.notify_book_available, borrowing.book_id)
 
     return borrowing
+
+
+@router.post("/{borrowing_id}/renew", response_model=BorrowingRead)
+def renew(
+    borrowing_id: uuid.UUID,
+    current_user: UserRead = Depends(get_current_user),
+    service: BorrowingService = Depends(get_borrowing_service),
+) -> BorrowingRead:
+    return service.renew(current_user.id, borrowing_id)

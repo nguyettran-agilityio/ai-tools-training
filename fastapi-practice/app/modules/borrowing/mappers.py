@@ -30,5 +30,6 @@ def to_borrowing_read(borrowing: Borrowing) -> BorrowingRead:
             "borrowed_at": _as_utc(borrowing.borrowed_at),
             "due_date": _as_utc(borrowing.due_date),
             "returned_at": _as_utc(borrowing.returned_at),
+            "renewed_at": _as_utc(borrowing.renewed_at),
         }
     )

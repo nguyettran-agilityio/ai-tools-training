@@ -17,10 +17,12 @@ from app.modules.borrowing.schemas import BorrowingRead
 
 
 class BorrowingUpdateFields(TypedDict, total=False):
-    """The only field `update()` is ever asked to change — via `mark_returned`,
-    the sole write transition a borrowing supports."""
+    """Every field `update()` is ever asked to change — via the 2 named write
+    transitions below (`mark_returned`, `mark_renewed`)."""
 
     returned_at: datetime | None
+    due_date: datetime
+    renewed_at: datetime | None
 
 
 class BorrowingRepositoryInterface(CrudRepositoryInterface[BorrowingRead, BorrowingUpdateFields]):
@@ -52,7 +54,17 @@ class BorrowingRepositoryInterface(CrudRepositoryInterface[BorrowingRead, Borrow
     @abc.abstractmethod
     def count_active_by_book(self, book_id: uuid.UUID) -> int: ...
 
+    # The 2 write transitions a borrowing ever makes — named rather than a
+    # generic `update(id, dict)`.
     @abc.abstractmethod
-    def mark_returned(self, id: uuid.UUID, returned_at: datetime) -> BorrowingRead:
-        """The one write transition a borrowing ever makes."""
+    def mark_returned(self, id: uuid.UUID, returned_at: datetime) -> BorrowingRead: ...
+
+    @abc.abstractmethod
+    def mark_renewed(
+        self, id: uuid.UUID, due_date: datetime, renewed_at: datetime
+    ) -> BorrowingRead:
+        """Plain update, not a conditional `WHERE renewed_at IS NULL`: two
+        concurrent renew requests can both pass the service's "already
+        renewed" check and both write. Accepted limitation — the second write
+        sets the same `due_date`, so the loan is still extended only once."""
         ...

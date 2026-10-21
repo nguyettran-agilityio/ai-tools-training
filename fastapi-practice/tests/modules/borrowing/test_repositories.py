@@ -169,3 +169,19 @@ class TestBorrowingRepository:
 
         assert result.returned_at == returned_at
         assert result.status == "returned"
+
+    def test_mark_renewed_sets_due_date_and_renewed_at_as_utc(self, session):
+        user = make_user(session)
+        category = make_category(session)
+        book = make_book(session, category_id=category.id)
+        borrowing = make_borrowing(session, user.id, book.id)
+
+        repo = self._make_repo(session)
+        now = datetime.now(UTC)
+        new_due = now + timedelta(days=20)
+        result = repo.mark_renewed(borrowing.id, due_date=new_due, renewed_at=now)
+
+        assert result.due_date == new_due
+        assert result.renewed_at == now
+        assert result.renewed_at.tzinfo is UTC
+        assert repo.get_by_id(borrowing.id).renewed_at == now

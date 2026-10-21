@@ -49,6 +49,12 @@ class ReservationRepositoryInterface(
         ...
 
     @abc.abstractmethod
+    def count_open_by_book_excluding_user(self, book_id: uuid.UUID, user_id: uuid.UUID) -> int:
+        """Pending or notified reservations on this book held by anyone other
+        than `user_id` — i.e. other members still waiting on it."""
+        ...
+
+    @abc.abstractmethod
     def count_open_by_user(self, user_id: uuid.UUID) -> int:
         """Pending or notified reservations still open for this user."""
         ...

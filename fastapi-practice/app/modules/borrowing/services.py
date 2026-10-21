@@ -42,6 +42,7 @@ class BorrowingService:
         user_repository: UserRepositoryInterface,
         borrow_limit: int,
         loan_duration_days: int,
+        renewal_days: int,
         notifier: Notifier,
     ) -> None:
         self.borrowing_repository = borrowing_repository
@@ -59,6 +60,7 @@ class BorrowingService:
         self.user_repository = user_repository
         self.borrow_limit = borrow_limit
         self.loan_duration_days = loan_duration_days
+        self.renewal_days = renewal_days
         # `Notifier` interface, not a concrete notifier/service class — same
         # decoupling reasoning as `reservation_repository` above.
         self.notifier = notifier
@@ -144,6 +146,38 @@ class BorrowingService:
         self.book_repository.increment_available_copies(borrowing.book_id)
 
         return borrowing
+
+    def renew(self, user_id: uuid.UUID, borrowing_id: uuid.UUID) -> BorrowingRead:
+        """Extend an active, not-yet-overdue loan by `renewal_days`, at most
+        once per loan, and only while no other member is waiting on the book."""
+        borrowing = get_or_404(self.borrowing_repository, borrowing_id, "Borrowing not found")
+
+        if borrowing.user_id != user_id:
+            raise ForbiddenError("You can only renew your own borrowings")
+
+        if borrowing.returned_at is not None:
+            raise ConflictError("Book already returned")
+
+        if borrowing.renewed_at is not None:
+            raise ConflictError("This loan has already been renewed")
+
+        now = _now_utc()
+        # Same overdue test as `BorrowingRead.status`.
+        if borrowing.due_date < now:
+            raise ConflictError("Overdue loans cannot be renewed")
+
+        # The caller's own open reservation doesn't count — only someone
+        # else waiting on the book blocks the renewal.
+        if self.reservation_repository.count_open_by_book_excluding_user(
+            borrowing.book_id, user_id
+        ):
+            raise ConflictError("This book has an open reservation")
+
+        return self.borrowing_repository.mark_renewed(
+            borrowing_id,
+            due_date=borrowing.due_date + timedelta(days=self.renewal_days),
+            renewed_at=now,
+        )
 
     async def notify_overdue(self, now: datetime | None = None) -> int:
         """Admin-triggered sweep: notify every member holding an overdue book.
