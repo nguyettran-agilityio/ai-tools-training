@@ -6,7 +6,7 @@ from datetime import UTC, datetime
 # core
 from app.core.exceptions import AlreadyExistsError, ConflictError, ForbiddenError, NotFoundError
 from app.core.mappers import pagination_offset, to_page
-from app.core.notifications import Notification, Notifier
+from app.core.notifications import BOOK_AVAILABLE, Notification, Notifier
 from app.core.schemas import Page, PaginationParams
 from app.core.service_utils import get_or_404
 
@@ -87,7 +87,7 @@ class ReservationService:
             user = self.user_repository.get_by_id(reservation.user_id)
             notification = Notification(
                 user_id=reservation.user_id,
-                type="BOOK_AVAILABLE",
+                type=BOOK_AVAILABLE,
                 book_id=book_id,
                 message="A book you reserved is now available.",
                 email=user.email if user is not None else None,
