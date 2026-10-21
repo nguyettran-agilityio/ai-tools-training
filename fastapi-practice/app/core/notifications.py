@@ -16,10 +16,10 @@ from app.core.ws_manager import ConnectionManager
 
 logger = logging.getLogger(__name__)
 
-# Notification type identifiers (`Notification.type`). `ReservationService`
-# still passes "BOOK_AVAILABLE" as its own literal (left untouched here); this
-# constant is for the new overdue-reminder feature so its call sites don't
-# repeat a raw string.
+# Notification type identifiers (`Notification.type`), so call sites don't
+# repeat a raw string. Tests compare against the string literals on purpose:
+# changing a value breaks clients.
+BOOK_AVAILABLE = "BOOK_AVAILABLE"
 OVERDUE_REMINDER = "OVERDUE_REMINDER"
 
 
