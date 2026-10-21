@@ -60,6 +60,9 @@ def service(
         user_repository,
         borrow_limit=2,
         loan_duration_days=14,
+        # Deliberately != `loan_duration_days`, so `TestRenew` proves the
+        # renewal extension comes from `renewal_days`, not the loan length.
+        renewal_days=7,
         notifier=notifier,
     )
 
@@ -181,6 +184,103 @@ class TestReturnBook:
 
         with pytest.raises(ConflictError):
             service.return_book(user_id, borrowing.id)
+
+
+def _make_loan(borrowing_repository, user_id, due_in_days: int = 3, **overrides):
+    now = datetime.now(UTC)
+    data = {
+        "user_id": user_id,
+        "book_id": uuid.uuid4(),
+        "borrowed_at": now - timedelta(days=14 - due_in_days),
+        "due_date": now + timedelta(days=due_in_days),
+        "returned_at": None,
+    }
+    data.update(overrides)
+    return borrowing_repository.create(data)
+
+
+class TestRenew:
+    def test_extends_due_date_by_renewal_days_and_records_renewed_at(
+        self, service, borrowing_repository
+    ):
+        user_id = uuid.uuid4()
+        loan = _make_loan(borrowing_repository, user_id)
+
+        renewed = service.renew(user_id, loan.id)
+
+        assert renewed.due_date == loan.due_date + timedelta(days=7)
+        assert renewed.renewed_at is not None
+        assert borrowing_repository.get_by_id(loan.id).due_date == renewed.due_date
+
+    def test_second_renewal_raises_conflict(self, service, borrowing_repository):
+        user_id = uuid.uuid4()
+        loan = _make_loan(borrowing_repository, user_id)
+        service.renew(user_id, loan.id)
+
+        with pytest.raises(ConflictError, match="already been renewed"):
+            service.renew(user_id, loan.id)
+
+    def test_overdue_loan_raises_conflict(self, service, borrowing_repository):
+        user_id = uuid.uuid4()
+        loan = _make_loan(borrowing_repository, user_id, due_in_days=-1)
+
+        with pytest.raises(ConflictError, match="Overdue"):
+            service.renew(user_id, loan.id)
+
+        assert borrowing_repository.get_by_id(loan.id).renewed_at is None
+
+    @pytest.mark.parametrize("notified", [False, True])
+    def test_another_members_open_reservation_raises_conflict(
+        self, service, borrowing_repository, reservation_repository, notified
+    ):
+        user_id = uuid.uuid4()
+        loan = _make_loan(borrowing_repository, user_id)
+        reservation = reservation_repository.create(
+            {"user_id": uuid.uuid4(), "book_id": loan.book_id}
+        )
+        if notified:
+            reservation_repository.mark_notified(reservation.id, datetime.now(UTC))
+
+        with pytest.raises(ConflictError, match="open reservation"):
+            service.renew(user_id, loan.id)
+
+    def test_closed_reservation_by_another_member_does_not_block(
+        self, service, borrowing_repository, reservation_repository
+    ):
+        user_id = uuid.uuid4()
+        loan = _make_loan(borrowing_repository, user_id)
+        reservation = reservation_repository.create(
+            {"user_id": uuid.uuid4(), "book_id": loan.book_id}
+        )
+        reservation_repository.mark_cancelled(reservation.id)
+
+        assert service.renew(user_id, loan.id).renewed_at is not None
+
+    def test_callers_own_open_reservation_does_not_block(
+        self, service, borrowing_repository, reservation_repository
+    ):
+        user_id = uuid.uuid4()
+        loan = _make_loan(borrowing_repository, user_id)
+        reservation_repository.create({"user_id": user_id, "book_id": loan.book_id})
+
+        assert service.renew(user_id, loan.id).renewed_at is not None
+
+    def test_returned_loan_raises_conflict(self, service, borrowing_repository):
+        user_id = uuid.uuid4()
+        loan = _make_loan(borrowing_repository, user_id, returned_at=datetime.now(UTC))
+
+        with pytest.raises(ConflictError, match="already returned"):
+            service.renew(user_id, loan.id)
+
+    def test_someone_elses_loan_raises_forbidden(self, service, borrowing_repository):
+        loan = _make_loan(borrowing_repository, uuid.uuid4())
+
+        with pytest.raises(ForbiddenError):
+            service.renew(uuid.uuid4(), loan.id)
+
+    def test_unknown_borrowing_raises_not_found(self, service):
+        with pytest.raises(NotFoundError):
+            service.renew(uuid.uuid4(), uuid.uuid4())
 
 
 class TestNotifyOverdue:

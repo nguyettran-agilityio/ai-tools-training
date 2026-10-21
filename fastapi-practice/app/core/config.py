@@ -32,6 +32,7 @@ class Settings(BaseSettings):
     # Business rules
     borrow_limit: int = 5
     loan_duration_days: int = 14
+    renewal_days: int = 14
 
     # Rate limiting — in-memory, per-process (see app/core/rate_limiter.py).
     # Guards /auth/login and /auth/register against brute-force/spam.

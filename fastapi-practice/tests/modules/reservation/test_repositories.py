@@ -163,3 +163,44 @@ class TestReservationRepository:
         repo = self._make_repo(session)
 
         assert repo.count_open_by_user(user.id) == 1
+
+    def test_count_open_by_book_excluding_user_skips_own_and_closed(self, session):
+        user = make_user(session)
+        category = make_category(session)
+        book = make_book(session, category_id=category.id)
+        other_book = make_book(session, category_id=category.id)
+        make_reservation(session, user.id, book.id, status=ReservationStatus.PENDING)  # own
+        make_reservation(
+            session,
+            make_user(session, email="b@x.com").id,
+            book.id,
+            status=ReservationStatus.PENDING,
+        )
+        make_reservation(
+            session,
+            make_user(session, email="c@x.com").id,
+            book.id,
+            status=ReservationStatus.NOTIFIED,
+        )
+        make_reservation(
+            session,
+            make_user(session, email="d@x.com").id,
+            book.id,
+            status=ReservationStatus.FULFILLED,
+        )
+        make_reservation(
+            session,
+            make_user(session, email="e@x.com").id,
+            book.id,
+            status=ReservationStatus.CANCELLED,
+        )
+        make_reservation(
+            session,
+            make_user(session, email="f@x.com").id,
+            other_book.id,
+            status=ReservationStatus.PENDING,
+        )
+
+        repo = self._make_repo(session)
+
+        assert repo.count_open_by_book_excluding_user(book.id, user.id) == 2

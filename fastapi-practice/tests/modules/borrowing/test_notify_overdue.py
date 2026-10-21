@@ -188,6 +188,7 @@ class TestNotifyOverdueService:
                 UserRepository(SQLModelBackend(session, User, to_user_read)),
                 borrow_limit=5,
                 loan_duration_days=14,
+                renewal_days=14,
                 notifier=get_notifier(),
             )
             count = asyncio.run(service.notify_overdue())
@@ -225,6 +226,7 @@ class TestNotifyOverdueService:
                 UserRepository(SQLModelBackend(session, User, to_user_read)),
                 borrow_limit=5,
                 loan_duration_days=14,
+                renewal_days=14,
                 notifier=get_notifier(),
             )
             count = asyncio.run(service.notify_overdue())

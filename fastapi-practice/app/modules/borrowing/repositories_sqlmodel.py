@@ -105,3 +105,8 @@ class BorrowingRepository(BorrowingRepositoryInterface):
 
     def mark_returned(self, id: uuid.UUID, returned_at: datetime) -> BorrowingRead:
         return self.backend.update(id, {"returned_at": returned_at})
+
+    def mark_renewed(
+        self, id: uuid.UUID, due_date: datetime, renewed_at: datetime
+    ) -> BorrowingRead:
+        return self.backend.update(id, {"due_date": due_date, "renewed_at": renewed_at})

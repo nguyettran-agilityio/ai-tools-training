@@ -78,6 +78,17 @@ class ReservationRepository(ReservationRepositoryInterface):
             )
         ).one()
 
+    def count_open_by_book_excluding_user(self, book_id: uuid.UUID, user_id: uuid.UUID) -> int:
+        return self.backend.session.exec(
+            select(func.count())
+            .select_from(Reservation)
+            .where(
+                Reservation.book_id == book_id,
+                Reservation.user_id != user_id,
+                Reservation.status.in_([ReservationStatus.PENDING, ReservationStatus.NOTIFIED]),
+            )
+        ).one()
+
     def count_open_by_user(self, user_id: uuid.UUID) -> int:
         return self.backend.session.exec(
             select(func.count())
