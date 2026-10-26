@@ -43,12 +43,24 @@ refspec_dest() {
   echo "$spec"
 }
 
+# Only the alembic subcommand (first non-option token after `alembic`) counts,
+# so `alembic revision -m "upgrade users"` is allowed.
 check_alembic() {
-  local seen_alembic=0
+  local seen_alembic=0 skip=0
   for tok in "$@"; do
+    if [ "$seen_alembic" = 0 ]; then
+      case "$tok" in alembic | */alembic) seen_alembic=1 ;; esac
+      continue
+    fi
+    if [ "$skip" = 1 ]; then
+      skip=0
+      continue
+    fi
     case "$tok" in
-      alembic | */alembic) seen_alembic=1 ;;
-      upgrade) [ "$seen_alembic" = 1 ] && block "\`alembic upgrade\` is forbidden. The user applies migrations." ;;
+      -c | --config | -n | --name | -x) skip=1 ;;
+      -*) ;;
+      upgrade) block "\`alembic upgrade\` is forbidden. The user applies migrations." ;;
+      *) return 0 ;;
     esac
   done
 }
@@ -69,6 +81,8 @@ check_git_push() {
       case "$tok" in
         push) in_push=1 ;;
         -C | -c | --git-dir | --work-tree) i=$((i + 1)) ;;
+        -*) ;;
+        *) return 0 ;; # subcommand is not push, e.g. `git commit -m push`
       esac
     else
       case "$tok" in

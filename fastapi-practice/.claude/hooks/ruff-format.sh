@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # PostToolUse hook: format the Python file Claude just edited with ruff.
-# Never blocks Claude: any problem is reported on stderr and the hook exits 0.
+# Never blocks Claude: it always exits 0, so a failure written to stderr
+# is not shown to anyone.
 set -u
 
 if ! command -v jq >/dev/null 2>&1; then
