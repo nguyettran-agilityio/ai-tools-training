@@ -60,7 +60,23 @@ def register_member(client, email, full_name) -> str:
     return response.json()["access_token"]
 
 
+class TestListMyReservations:
+    def test_anonymous_returns_401(self, client):
+        response = client.get("/reservations/my")
+
+        assert response.status_code == 401
+        assert response.json()["code"] == "UNAUTHORIZED"
+
+
 class TestCreateReservation:
+    def test_anonymous_returns_401(self, client, admin_token, auth_headers):
+        book = create_book(client, admin_token, auth_headers)
+
+        response = client.post("/reservations", json={"bookId": book["id"]})
+
+        assert response.status_code == 401
+        assert response.json()["code"] == "UNAUTHORIZED"
+
     def test_reserving_nonexistent_book_returns_404(self, client, member_token, auth_headers):
         response = reserve(client, member_token, auth_headers, str(uuid.uuid4()))
 
@@ -102,6 +118,15 @@ class TestCreateReservation:
 
 
 class TestCancelReservation:
+    def test_anonymous_returns_401(self, client, admin_token, member_token, auth_headers):
+        book = create_book(client, admin_token, auth_headers)
+        reservation = reserve(client, member_token, auth_headers, book["id"]).json()
+
+        response = client.delete(f"/reservations/{reservation['id']}")
+
+        assert response.status_code == 401
+        assert response.json()["code"] == "UNAUTHORIZED"
+
     def test_cancelling_nonexistent_reservation_returns_404(
         self, client, member_token, auth_headers
     ):
