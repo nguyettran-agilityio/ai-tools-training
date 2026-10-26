@@ -6,7 +6,7 @@ Library management API (FastAPI, SQLModel, SQLite). When extending a module, mat
 
 ```bash
 uv sync
-uv run alembic upgrade head   # before first run and after pulling a new migration
+uv run alembic upgrade head   # human-run only, see Migrations
 uv run fastapi dev
 uv run pytest
 uv run ruff check . && uv run ruff format .
@@ -33,6 +33,7 @@ uv run pre-commit run --all-files
 ## Migrations
 
 - Alembic owns the schema. Never add `create_all()` to the app. It was removed because it silently created tables in `library.db`, even under tests.
+- `alembic upgrade` is run by a human, before first run and after pulling a new migration. Claude never runs it: a `PreToolUse` hook (`.claude/hooks/block-forbidden-commands.sh`) blocks it, along with pushing straight to `dev` or `main`. When a migration needs applying, ask the user.
 - After a model change, run `uv run alembic revision --autogenerate -m "..."`. Always review the generated file.
 - Commit the migration with the model change, in the same PR.
 - Never edit a migration that has been applied outside your own machine.
