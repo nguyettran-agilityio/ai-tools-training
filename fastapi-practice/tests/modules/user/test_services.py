@@ -24,7 +24,7 @@ from tests.fakes import FakeUserRepository
 
 
 @pytest.fixture
-def user_repository():
+def user_repository() -> FakeUserRepository:
     return FakeUserRepository()
 
 
@@ -92,7 +92,9 @@ class TestLogin:
         with pytest.raises(UnauthorizedError, match="Invalid email or password"):
             auth_service.login(LoginRequest(email="nobody@example.com", password="x"))
 
-    def test_inactive_user_raises_unauthorized(self, auth_service, user_repository):
+    def test_inactive_user_raises_unauthorized(
+        self, auth_service, user_repository: FakeUserRepository
+    ):
         registered = auth_service.register(
             UserCreate(email="jane@example.com", password="supersecret", full_name="Jane Doe")
         )

@@ -57,11 +57,11 @@ extend-immutable-calls = ["fastapi.Depends", "fastapi.params.Depends", "fastapi.
 [tool.mypy]
 python_version = "3.12"
 plugins = ["pydantic.mypy"]
-# Covers `tests/` as well as `app/`, so the fakes in `tests/fakes.py` and any
-# annotated test helper/fixture are checked against `app/`'s interfaces (e.g.
-# the per-module `UpdateFields` TypedDict on `update()`). Unannotated test
-# functions are skipped (mypy's default, no `check_untyped_defs`), so most
-# test bodies stay unchecked — this is not full strict typing everywhere.
+# Covers `tests/` as well as `app/`, so the fakes in `tests/fakes.py` and test
+# bodies are checked against `app/`'s interfaces (e.g. the per-module
+# `UpdateFields` TypedDict on `update()`). Test functions are mostly
+# unannotated, so `tests.*` turns on `check_untyped_defs` below; without it
+# mypy skips their bodies entirely.
 files = ["app", "tests"]
 warn_return_any = true
 warn_redundant_casts = true
@@ -80,3 +80,17 @@ no_implicit_optional = true
 # script that queries directly for bulk demo-data cleanup.
 module = ["app.modules.*.repositories_sqlmodel", "app.cli.seed_demo"]
 disable_error_code = ["attr-defined", "arg-type", "union-attr"]
+
+[[tool.mypy.overrides]]
+# Most test functions are unannotated, and mypy skips the body of an
+# unannotated function by default — so a typo'd key in a TypedDict passed to a
+# fake's `update()` would go unreported. Check them anyway.
+module = ["tests.*"]
+check_untyped_defs = true
+
+[[tool.mypy.overrides]]
+# Same SQLModel class-level query-expression false positive as
+# `app.cli.seed_demo` above: the test queries `Borrowing.book_id.in_(...)`
+# directly to check the seeded rows. Only `attr-defined` is needed here.
+module = ["tests.cli.test_seed_demo"]
+disable_error_code = ["attr-defined"]

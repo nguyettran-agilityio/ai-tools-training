@@ -28,6 +28,14 @@ def _reset_notifier(client):
     set_notifier(InMemoryNotifier())
 
 
+def _in_memory_notifier() -> InMemoryNotifier:
+    """`get_notifier()` is typed as the `Notifier` base; only the
+    `InMemoryNotifier` installed by `_reset_notifier` has `sent_to`/`reset`."""
+    notifier = get_notifier()
+    assert isinstance(notifier, InMemoryNotifier)
+    return notifier
+
+
 def create_category(client, token, auth_headers, name=None):
     name = name or f"Cat {uuid.uuid4()}"
     response = client.post("/categories", json={"name": name}, headers=auth_headers(token))
@@ -173,7 +181,7 @@ class TestAutoReserveOnBorrow:
         response = return_borrowing(client, member_token, auth_headers, first.json()["id"])
         assert response.status_code == 200
 
-        notifier = get_notifier()
+        notifier = _in_memory_notifier()
         sent_to_b = notifier.sent_to(uuid.UUID(user_b["id"]))
         assert len(sent_to_b) == 1
         assert sent_to_b[0].type == "BOOK_AVAILABLE"

@@ -10,7 +10,14 @@ import pytest
 from sqlmodel import Session, SQLModel, create_engine, select
 from sqlmodel.pool import StaticPool
 
-from app.cli.seed_demo import ADMIN_EMAIL, CLEAN_BOOKS, MEMBERS, OVERDUE_BOOKS, seed_demo
+from app.cli.seed_demo import (
+    ADMIN_EMAIL,
+    CLEAN_BOOKS,
+    MEMBERS,
+    OVERDUE_BOOKS,
+    SeedDemoResult,
+    seed_demo,
+)
 from app.core import model_registry  # noqa: F401  (registers all tables on metadata)
 from app.core.security import verify_password
 from app.modules.book.models import Book
@@ -33,9 +40,17 @@ def session_fixture() -> Generator[Session, None, None]:
     SQLModel.metadata.drop_all(engine)
 
 
+def _seed(session: Session) -> SeedDemoResult:
+    """`seed_demo(force=True)` always seeds; it only returns `None` for the
+    no-op `force=False` path."""
+    result = seed_demo(session, force=True)
+    assert result is not None
+    return result
+
+
 class TestSeedDemoAccounts:
     def test_creates_admin_and_four_members(self, session):
-        result = seed_demo(session, force=True)
+        result = _seed(session)
 
         assert result.admin.email == ADMIN_EMAIL
         assert result.admin.role == UserRole.ADMIN
@@ -55,7 +70,7 @@ class TestSeedDemoAccounts:
 
 class TestSeedDemoCleanBooks:
     def test_six_clean_books_are_fully_available(self, session):
-        result = seed_demo(session, force=True)
+        result = _seed(session)
 
         assert len(result.clean_books) == 6
         assert [b.title for b in result.clean_books] == [title for title, *_ in CLEAN_BOOKS]
@@ -67,7 +82,7 @@ class TestSeedDemoCleanBooks:
         """No active borrowings — and no borrowings of any kind — on the
         clean books, so the demoer never hits stale state borrowing them
         live."""
-        result = seed_demo(session, force=True)
+        result = _seed(session)
         clean_book_ids = {b.id for b in result.clean_books}
 
         borrowings = session.exec(
@@ -78,7 +93,7 @@ class TestSeedDemoCleanBooks:
 
 class TestSeedDemoOverdueBorrowings:
     def test_exactly_two_overdue_active_borrowings_for_first_member(self, session):
-        result = seed_demo(session, force=True)
+        result = _seed(session)
         now = datetime.now(UTC)
 
         assert len(result.overdue_borrowings) == 2
@@ -89,7 +104,7 @@ class TestSeedDemoOverdueBorrowings:
             assert due_date < now
 
     def test_overdue_books_are_dedicated_and_fully_checked_out(self, session):
-        result = seed_demo(session, force=True)
+        result = _seed(session)
 
         assert len(result.overdue_books) == 2
         overdue_book_ids = {b.id for b in result.overdue_books}
@@ -128,11 +143,11 @@ class TestSeedDemoIdempotency:
         assert len(session.exec(select(Book)).all()) == 8  # 6 clean + 2 overdue
 
     def test_force_resets_members_but_keeps_the_same_admin_row(self, session):
-        first = seed_demo(session, force=True)
+        first = _seed(session)
         admin_id_before = first.admin.id
         first_member_id_before = first.members[0].id
 
-        second = seed_demo(session, force=True)
+        second = _seed(session)
 
         assert second.admin.id == admin_id_before  # admin is get-or-created, never deleted
         assert second.members[0].id != first_member_id_before  # members are wiped and recreated

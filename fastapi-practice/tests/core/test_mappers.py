@@ -1,11 +1,12 @@
 """Tests for app.core.mappers.to_page — generic pagination helper, no DB."""
 
 from app.core.mappers import to_page
+from app.core.schemas import Page
 
 
 class TestToPage:
     def test_empty_total_is_zero_pages(self):
-        page = to_page(items=[], total=0, page=1, page_size=5, mapper_fn=lambda x: x)
+        page: Page[int] = to_page(items=[], total=0, page=1, page_size=5, mapper_fn=lambda x: x)
         assert page.total_pages == 0
         assert page.items == []
 
