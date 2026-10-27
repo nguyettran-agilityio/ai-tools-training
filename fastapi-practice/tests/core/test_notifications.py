@@ -7,6 +7,7 @@ through the real HTTP API instead.
 # Standard library
 import asyncio
 import uuid
+from typing import Any
 from unittest.mock import MagicMock, patch
 
 # Local application
@@ -22,7 +23,7 @@ from app.core.notifications import (
 
 
 def _make_notification(**overrides) -> Notification:
-    defaults = {
+    defaults: dict[str, Any] = {
         "user_id": uuid.uuid4(),
         "type": "BOOK_AVAILABLE",
         "book_id": uuid.uuid4(),

@@ -154,4 +154,6 @@ class TestNotifyBookAvailable:
 
 
 def reservation_status(service: ReservationService, reservation_id: uuid.UUID) -> str:
-    return service.reservation_repository.get_by_id(reservation_id).status
+    reservation = service.reservation_repository.get_by_id(reservation_id)
+    assert reservation is not None
+    return reservation.status

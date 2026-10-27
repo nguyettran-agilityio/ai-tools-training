@@ -53,7 +53,7 @@ def second_member_token(client) -> str:
         json={"email": email, "password": password, "fullName": "Second Member"},
     )
     response = client.post("/auth/login", json={"email": email, "password": password})
-    return response.json()["access_token"]
+    return str(response.json()["access_token"])
 
 
 class TestBorrowBook:
