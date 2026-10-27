@@ -1,6 +1,7 @@
-"""ReservationService.create / cancel: not-found, ownership, and
-duplicate/already-closed guards not exercised by
-`tests/test_reservation_notify.py` (which focuses on the notify pipeline).
+"""Reservation endpoints (list my / create / cancel): 401 for anonymous
+callers, plus the not-found, ownership, and duplicate/already-closed guards
+not exercised by `tests/modules/reservation/test_notify.py` (which focuses on
+the notify pipeline).
 """
 
 import uuid
