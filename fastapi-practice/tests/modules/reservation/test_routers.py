@@ -1,6 +1,7 @@
-"""ReservationService.create / cancel: not-found, ownership, and
-duplicate/already-closed guards not exercised by
-`tests/test_reservation_notify.py` (which focuses on the notify pipeline).
+"""Reservation endpoints (list my / create / cancel): 401 for anonymous
+callers, plus the not-found, ownership, and duplicate/already-closed guards
+not exercised by `tests/modules/reservation/test_notify.py` (which focuses on
+the notify pipeline).
 """
 
 import uuid
@@ -60,7 +61,23 @@ def register_member(client, email, full_name) -> str:
     return str(response.json()["access_token"])
 
 
+class TestListMyReservations:
+    def test_anonymous_returns_401(self, client):
+        response = client.get("/reservations/my")
+
+        assert response.status_code == 401
+        assert response.json()["code"] == "UNAUTHORIZED"
+
+
 class TestCreateReservation:
+    def test_anonymous_returns_401(self, client, admin_token, auth_headers):
+        book = create_book(client, admin_token, auth_headers)
+
+        response = client.post("/reservations", json={"bookId": book["id"]})
+
+        assert response.status_code == 401
+        assert response.json()["code"] == "UNAUTHORIZED"
+
     def test_reserving_nonexistent_book_returns_404(self, client, member_token, auth_headers):
         response = reserve(client, member_token, auth_headers, str(uuid.uuid4()))
 
@@ -102,6 +119,15 @@ class TestCreateReservation:
 
 
 class TestCancelReservation:
+    def test_anonymous_returns_401(self, client, admin_token, member_token, auth_headers):
+        book = create_book(client, admin_token, auth_headers)
+        reservation = reserve(client, member_token, auth_headers, book["id"]).json()
+
+        response = client.delete(f"/reservations/{reservation['id']}")
+
+        assert response.status_code == 401
+        assert response.json()["code"] == "UNAUTHORIZED"
+
     def test_cancelling_nonexistent_reservation_returns_404(
         self, client, member_token, auth_headers
     ):
