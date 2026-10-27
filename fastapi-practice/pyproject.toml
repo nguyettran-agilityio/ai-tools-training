@@ -61,7 +61,10 @@ plugins = ["pydantic.mypy"]
 # contract (services/routers depend on Interface, not a concrete ORM class),
 # not full strict typing everywhere — `tests/` has its own dynamic patterns
 # (fixtures, `create_autospec`) that aren't worth fighting the checker over.
-files = ["app"]
+# The one exception is `tests/fakes.py`: the fakes implement the same
+# repository interfaces, so checking them keeps their signatures (e.g. the
+# per-module `UpdateFields` TypedDict on `update()`) in sync with `app/`.
+files = ["app", "tests/fakes.py"]
 warn_return_any = true
 warn_redundant_casts = true
 warn_unused_ignores = true

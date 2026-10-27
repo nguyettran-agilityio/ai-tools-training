@@ -9,17 +9,20 @@ from datetime import UTC, datetime
 from typing import Any
 
 # Local application
-from app.modules.book.repositories import BookRepositoryInterface
+from app.modules.book.repositories import BookRepositoryInterface, BookUpdateFields
 from app.modules.book.schemas import BookRead
-from app.modules.borrowing.repositories import BorrowingRepositoryInterface
+from app.modules.borrowing.repositories import BorrowingRepositoryInterface, BorrowingUpdateFields
 from app.modules.borrowing.schemas import BorrowingRead
-from app.modules.category.repositories import CategoryRepositoryInterface
+from app.modules.category.repositories import CategoryRepositoryInterface, CategoryUpdateFields
 from app.modules.category.schemas import CategoryRead
 from app.modules.reservation.enums import ReservationStatus
-from app.modules.reservation.repositories import ReservationRepositoryInterface
+from app.modules.reservation.repositories import (
+    ReservationRepositoryInterface,
+    ReservationUpdateFields,
+)
 from app.modules.reservation.schemas import ReservationRead
 from app.modules.user.enums import UserRole
-from app.modules.user.repositories import UserRepositoryInterface
+from app.modules.user.repositories import UserRepositoryInterface, UserUpdateFields
 from app.modules.user.schemas import UserCredentials, UserRead
 
 
@@ -49,7 +52,7 @@ class FakeCategoryRepository(CategoryRepositoryInterface):
         self._rows[category.id] = category
         return category
 
-    def update(self, id: uuid.UUID, changes: dict[str, Any]) -> CategoryRead:
+    def update(self, id: uuid.UUID, changes: CategoryUpdateFields) -> CategoryRead:
         updated = self._rows[id].model_copy(update=changes)
         self._rows[id] = updated
         return updated
@@ -109,7 +112,7 @@ class FakeUserRepository(UserRepositoryInterface):
         self._hashed_passwords[user.id] = data["hashed_password"]
         return user
 
-    def update(self, id: uuid.UUID, changes: dict[str, Any]) -> UserRead:
+    def update(self, id: uuid.UUID, changes: UserUpdateFields) -> UserRead:
         updated = self._rows[id].model_copy(update=changes)
         self._rows[id] = updated
         return updated
@@ -169,7 +172,7 @@ class FakeBookRepository(BookRepositoryInterface):
         self._rows[book.id] = book
         return book
 
-    def update(self, id: uuid.UUID, changes: dict[str, Any]) -> BookRead:
+    def update(self, id: uuid.UUID, changes: BookUpdateFields) -> BookRead:
         updated = self._rows[id].model_copy(update=changes)
         self._rows[id] = updated
         return updated
@@ -269,7 +272,7 @@ class FakeBorrowingRepository(BorrowingRepositoryInterface):
         self._rows[borrowing.id] = borrowing
         return borrowing
 
-    def update(self, id: uuid.UUID, changes: dict[str, Any]) -> BorrowingRead:
+    def update(self, id: uuid.UUID, changes: BorrowingUpdateFields) -> BorrowingRead:
         updated = self._rows[id].model_copy(update=changes)
         self._rows[id] = updated
         return updated
@@ -369,7 +372,7 @@ class FakeReservationRepository(ReservationRepositoryInterface):
         self._rows[reservation.id] = reservation
         return reservation
 
-    def update(self, id: uuid.UUID, changes: dict[str, Any]) -> ReservationRead:
+    def update(self, id: uuid.UUID, changes: ReservationUpdateFields) -> ReservationRead:
         updated = self._rows[id].model_copy(update=changes)
         self._rows[id] = updated
         return updated
