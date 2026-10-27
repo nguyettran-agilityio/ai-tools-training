@@ -1,0 +1,55 @@
+name: fastapi-practice CI
+
+on:
+  push:
+    branches: [dev, main]
+    paths:
+      - "fastapi-practice/**"
+      - ".github/workflows/fastapi-practice-ci.yml"
+  pull_request:
+    branches: [dev, main]
+    paths:
+      - "fastapi-practice/**"
+      - ".github/workflows/fastapi-practice-ci.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fastapi-practice-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: fastapi-practice
+    env:
+      # Test-only key (Settings requires >= 32 chars). Set nothing else:
+      # tests/core/test_config.py asserts every other field keeps its default.
+      JWT_SECRET_KEY: ci-test-secret-key-not-used-anywhere-real
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          cache-dependency-glob: fastapi-practice/uv.lock
+
+      - name: Install dependencies
+        run: uv sync --locked
+
+      - name: Ruff lint
+        run: uv run ruff check .
+
+      - name: Ruff format
+        run: uv run ruff format --check .
+
+      - name: Mypy
+        run: uv run mypy
+
+      - name: Pytest
+        run: uv run pytest
