@@ -87,7 +87,7 @@ def member_token(client: TestClient) -> str:
         json={"email": email, "password": password, "fullName": "Member User"},
     )
     response = client.post("/auth/login", json={"email": email, "password": password})
-    return response.json()["access_token"]
+    return str(response.json()["access_token"])
 
 
 @pytest.fixture
@@ -110,7 +110,7 @@ def admin_token(client: TestClient, db_engine) -> str:
         session.commit()
 
     response = client.post("/auth/login", json={"email": email, "password": password})
-    return response.json()["access_token"]
+    return str(response.json()["access_token"])
 
 
 @pytest.fixture

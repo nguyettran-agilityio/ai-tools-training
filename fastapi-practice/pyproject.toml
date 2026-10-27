@@ -57,14 +57,12 @@ extend-immutable-calls = ["fastapi.Depends", "fastapi.params.Depends", "fastapi.
 [tool.mypy]
 python_version = "3.12"
 plugins = ["pydantic.mypy"]
-# Scoped to `app/` on purpose: this is about protecting the repository-pattern
-# contract (services/routers depend on Interface, not a concrete ORM class),
-# not full strict typing everywhere — `tests/` has its own dynamic patterns
-# (fixtures, `create_autospec`) that aren't worth fighting the checker over.
-# The one exception is `tests/fakes.py`: the fakes implement the same
-# repository interfaces, so checking them keeps their signatures (e.g. the
-# per-module `UpdateFields` TypedDict on `update()`) in sync with `app/`.
-files = ["app", "tests/fakes.py"]
+# Covers `tests/` as well as `app/`, so the fakes in `tests/fakes.py` and any
+# annotated test helper/fixture are checked against `app/`'s interfaces (e.g.
+# the per-module `UpdateFields` TypedDict on `update()`). Unannotated test
+# functions are skipped (mypy's default, no `check_untyped_defs`), so most
+# test bodies stay unchecked — this is not full strict typing everywhere.
+files = ["app", "tests"]
 warn_return_any = true
 warn_redundant_casts = true
 warn_unused_ignores = true

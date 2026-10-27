@@ -92,7 +92,7 @@ def register_member(client, email, full_name) -> str:
     payload = {"email": email, "password": password, "fullName": full_name}
     client.post("/auth/register", json=payload)
     response = client.post("/auth/login", json={"email": email, "password": password})
-    return response.json()["access_token"]
+    return str(response.json()["access_token"])
 
 
 @pytest.fixture
