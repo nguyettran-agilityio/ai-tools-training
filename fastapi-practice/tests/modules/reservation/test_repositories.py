@@ -117,6 +117,7 @@ class TestReservationRepository:
         # SQLite round-trips naive (tzinfo dropped); unlike Borrowing's
         # mapper (`to_borrowing_read` / `_as_utc`), the reservation mapper
         # does no UTC normalization — compare the wall-clock value only.
+        assert result.notified_at is not None
         assert result.notified_at.replace(tzinfo=UTC) == notified_at
 
     def test_mark_fulfilled_sets_status(self, session):

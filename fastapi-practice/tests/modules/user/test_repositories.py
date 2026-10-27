@@ -55,6 +55,7 @@ class TestUserRepositoryCrud:
         make_user(session, email="jane@example.com", hashed_password="a-real-hash")
 
         credentials = repo.get_credentials_by_email("jane@example.com")
+        assert credentials is not None
         assert credentials.hashed_password == "a-real-hash"
         assert not hasattr(repo.get_by_email("jane@example.com"), "hashed_password")
 

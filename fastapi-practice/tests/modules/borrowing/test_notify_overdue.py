@@ -40,6 +40,14 @@ def _reset_notifier(client):
     set_notifier(InMemoryNotifier())
 
 
+def _in_memory_notifier() -> InMemoryNotifier:
+    """`get_notifier()` is typed as the `Notifier` base; only the
+    `InMemoryNotifier` installed by `_reset_notifier` has `sent_to`/`reset`."""
+    notifier = get_notifier()
+    assert isinstance(notifier, InMemoryNotifier)
+    return notifier
+
+
 def create_category(client, token, auth_headers, name=None):
     name = name or f"Cat {uuid.uuid4()}"
     response = client.post("/categories", json={"name": name}, headers=auth_headers(token))
@@ -144,7 +152,7 @@ class TestNotifyOverdueEndpoint:
         body = response.json()
         assert body["remindersSent"] == 2
 
-        notifier = get_notifier()
+        notifier = _in_memory_notifier()
         sent_to_member = notifier.sent_to(member_id)
         sent_to_member_b = notifier.sent_to(member_b_id)
         assert len(sent_to_member) == 1
@@ -235,4 +243,5 @@ class TestNotifyOverdueService:
 
         with Session(db_engine) as session:
             reloaded = session.get(Borrowing, borrowing_id)
+            assert reloaded is not None
             assert reloaded.returned_at is None

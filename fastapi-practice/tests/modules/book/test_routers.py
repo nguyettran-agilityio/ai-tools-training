@@ -264,7 +264,9 @@ class TestUpdateBook:
 
         with Session(db_engine) as session:
             member = session.exec(select(User)).first()
+            assert member is not None
             book = session.get(Book, book_id)
+            assert book is not None
             book.available_copies = 2  # 1 copy currently borrowed
             session.add(book)
             session.add(
@@ -298,6 +300,7 @@ class TestUpdateBook:
 
         with Session(db_engine) as session:
             book = session.get(Book, book_id)
+            assert book is not None
             book.available_copies = 0  # all 3 copies currently borrowed
             session.add(book)
             session.commit()
@@ -349,6 +352,7 @@ class TestDeleteBook:
 
         with Session(db_engine) as session:
             member = session.exec(select(User)).first()
+            assert member is not None
             session.add(
                 Borrowing(
                     user_id=member.id,
@@ -374,6 +378,7 @@ class TestDeleteBook:
 
         with Session(db_engine) as session:
             member = session.exec(select(User)).first()
+            assert member is not None
             borrowed_at = datetime.now(UTC) - timedelta(days=20)
             session.add(
                 Borrowing(
@@ -399,6 +404,7 @@ class TestDeleteBook:
 
         with Session(db_engine) as session:
             member = session.exec(select(User)).first()
+            assert member is not None
             session.add(Reservation(user_id=member.id, book_id=book_id))
             session.commit()
 

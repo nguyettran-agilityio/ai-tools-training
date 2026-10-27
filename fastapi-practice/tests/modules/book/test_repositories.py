@@ -93,7 +93,9 @@ class TestBookRepositorySearch:
 
     def test_get_by_isbn_and_count_by_category(self, session):
         book = make_book(session, category_id=self.fiction.id, isbn="unique-isbn")
-        assert self.repo.get_by_isbn("unique-isbn").id == book.id
+        found = self.repo.get_by_isbn("unique-isbn")
+        assert found is not None
+        assert found.id == book.id
         assert self.repo.get_by_isbn("does-not-exist") is None
         assert self.repo.count_by_category(self.fiction.id) == 4  # 3 seeded + this one
 

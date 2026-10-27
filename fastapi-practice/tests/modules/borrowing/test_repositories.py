@@ -184,4 +184,6 @@ class TestBorrowingRepository:
         assert result.due_date == new_due
         assert result.renewed_at == now
         assert result.renewed_at.tzinfo is UTC
-        assert repo.get_by_id(borrowing.id).renewed_at == now
+        reloaded = repo.get_by_id(borrowing.id)
+        assert reloaded is not None
+        assert reloaded.renewed_at == now

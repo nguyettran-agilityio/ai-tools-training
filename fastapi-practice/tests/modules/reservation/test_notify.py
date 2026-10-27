@@ -43,6 +43,14 @@ def _reset_notifier(client):
     set_notifier(InMemoryNotifier())
 
 
+def _in_memory_notifier() -> InMemoryNotifier:
+    """`get_notifier()` is typed as the `Notifier` base; only the
+    `InMemoryNotifier` installed by `_reset_notifier` has `sent_to`/`reset`."""
+    notifier = get_notifier()
+    assert isinstance(notifier, InMemoryNotifier)
+    return notifier
+
+
 def create_category(client, token, auth_headers, name=None):
     name = name or f"Cat {uuid.uuid4()}"
     response = client.post("/categories", json={"name": name}, headers=auth_headers(token))
@@ -120,7 +128,7 @@ class TestNotifyOnReturn:
         response = return_borrowing(client, member_token, auth_headers, borrowing["id"])
         assert response.status_code == 200
 
-        notifier = get_notifier()
+        notifier = _in_memory_notifier()
         sent_to_b = notifier.sent_to(uuid.UUID(user_b["id"]))
         sent_to_c = notifier.sent_to(uuid.UUID(user_c["id"]))
         assert len(sent_to_b) == 1
@@ -182,11 +190,11 @@ class TestNotifyOnReturn:
         # A future return notifies C again — their reservation was left open,
         # not consumed by someone else's borrow.
         user_c = me(client, member_c_token, auth_headers)
-        get_notifier().reset()
+        _in_memory_notifier().reset()
 
         return_borrowing(client, member_b_token, auth_headers, borrowed_by_b["id"])
 
-        assert len(get_notifier().sent_to(uuid.UUID(user_c["id"]))) == 1
+        assert len(_in_memory_notifier().sent_to(uuid.UUID(user_c["id"]))) == 1
 
     def test_return_with_no_pending_reservers_notifies_nobody_and_succeeds(
         self, client, admin_token, member_token, auth_headers
