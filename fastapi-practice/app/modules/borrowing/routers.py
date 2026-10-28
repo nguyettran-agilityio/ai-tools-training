@@ -26,6 +26,7 @@ from app.modules.borrowing.schemas import (
 from app.modules.borrowing.services import BorrowingService
 
 # reservation
+from app.modules.reservation.schemas import ReservationRead
 from app.modules.reservation.services import ReservationService
 
 # user
@@ -87,7 +88,17 @@ async def notify_overdue(
 # ── Path-param routes ────────────────────────────────────────────────────────
 
 
-@router.post("", status_code=status.HTTP_201_CREATED, response_model=None)
+@router.post(
+    "",
+    status_code=status.HTTP_201_CREATED,
+    response_model=None,
+    responses={
+        status.HTTP_202_ACCEPTED: {
+            "model": ReservationRead,
+            "description": "Book out of stock; the caller was queued instead.",
+        },
+    },
+)
 def borrow(
     data: BorrowRequest,
     current_user: UserRead = Depends(get_current_user),
