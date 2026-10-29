@@ -116,16 +116,19 @@ DTO `BorrowingBanRead(CamelModel)`: `user_id`, `banned_until`, `source_borrowing
 Report DTOs (in `app/modules/borrowing/schemas.py`, C-10):
 
 ```python
-class BorrowingReportRow(BorrowingRead):      # overdue + late-returns reports; keeps the computed `status`
+class BorrowingReportRow(
+    BorrowingRead
+):  # overdue + late-returns reports; keeps the computed `status`
     user_email: str
     book_title: str
+
 
 class BannedMemberReportRow(CamelModel):
     user_id: uuid.UUID
     user_email: str
     banned_until: datetime
     source_borrowing_id: uuid.UUID | None
-    source_book_title: str | None             # None if the source borrowing row is gone
+    source_book_title: str | None  # None if the source borrowing row is gone
 ```
 
 `user_email` / `book_title` are non-null: `borrowing.user_id` and `book_id` are `ON DELETE CASCADE`, so a borrowing row never outlives its user or book.
@@ -144,17 +147,26 @@ class BorrowingBanUpdateFields(TypedDict, total=False):
     source_borrowing_id: uuid.UUID | None
     updated_at: datetime
 
-class BorrowingBanRepositoryInterface(CrudRepositoryInterface[BorrowingBanRead, BorrowingBanUpdateFields]):
+
+class BorrowingBanRepositoryInterface(
+    CrudRepositoryInterface[BorrowingBanRead, BorrowingBanUpdateFields]
+):
     def get_active_by_user(self, user_id, now) -> BorrowingBanRead | None: ...
-    def extend(self, user_id, banned_until, source_borrowing_id, now) -> BorrowingBanRead: ...   # atomic MAX upsert
+    def extend(
+        self, user_id, banned_until, source_borrowing_id, now
+    ) -> BorrowingBanRead: ...  # atomic MAX upsert
     def list_active(self, offset, limit, now) -> tuple[list[BorrowingBanRead], int]: ...
 ```
 
 Additions to `BorrowingRepositoryInterface`:
 
 ```python
-def list_overdue_by_user(self, user_id, now) -> list[BorrowingRead]: ...   # unreturned & due_date < now
-def list_late_returns(self, offset, limit, returned_from, returned_to) -> tuple[list[BorrowingRead], int]: ...
+def list_overdue_by_user(
+    self, user_id, now
+) -> list[BorrowingRead]: ...  # unreturned & due_date < now
+def list_late_returns(
+    self, offset, limit, returned_from, returned_to
+) -> tuple[list[BorrowingRead], int]: ...
 ```
 
 - `list_late_returns` filters `returned_at IS NOT NULL AND returned_at > due_date`, plus optional range on `returned_at`, built with the existing `apply_filters` helper; ordered `returned_at DESC`.
