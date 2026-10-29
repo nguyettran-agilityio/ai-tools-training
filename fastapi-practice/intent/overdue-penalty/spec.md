@@ -59,7 +59,7 @@ Reservations are not affected, including the existing auto-reserve on an out-of-
 - FR-4.4 The same applies to a member blocked by FR-2 (holding an overdue loan). *Resolved by Lead (C-20): confirmed.*
 
 ### FR-5 Overdue report (admin)
-- FR-5.1 Currently overdue, unreturned loans.
+- FR-5.1 Currently overdue, unreturned loans, ordered newest borrow first (`borrowedAt` descending). *Resolved by Lead: matches the existing `list_all` order reused by `report_overdue`.*
 - FR-5.2 Late returns, filterable by a `from`/`to` range on `returned_at`, paginated, newest first.
 - FR-5.3 Currently banned members, with `bannedUntil`, paginated, soonest-ending first.
 - FR-5.4 All report endpoints are admin-only (`require_admin`). *Resolved by Lead (OQ-3): librarian = admin.*
