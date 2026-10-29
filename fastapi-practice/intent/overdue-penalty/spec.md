@@ -326,3 +326,23 @@ Items marked **[LEAD]** need a decision; the others are risks or notes for the i
 3. An admin can list currently overdue loans (`GET /borrowings/reports/overdue`), late returns in a range (`GET /borrowings/reports/late-returns`) and currently banned members (`GET /borrowings/reports/bans`); every row shows the member's email and the book title. → SC-3
 4. A banned member can still create a reservation via `POST /reservations`, and `POST /borrowings` for an out-of-stock book still queues them with 202.
 5. Late returns recorded before deployment never cause a ban.
+
+---
+
+## 10. Clarifications from ticket Q&A
+
+QA questions from the test matrix (#45) that exposed real gaps in the tickets or needed a Lead decision. Each decision is applied to the ticket AC; the link goes to the BA answer. Questions answered by existing behaviour, test approach or the AC itself are not listed.
+
+| ID | Decision | Issue |
+|---|---|---|
+| Q-40-1 | With `late_return_ban_days = 0`, a late return still upserts the `borrowing_ban` row with `banned_until = MAX(previous, returned_at)`. It is never active. | [#40](https://github.com/nguyettran-agilityio/ai-tools-training/issues/40#issuecomment-6492558821) |
+| Q-40-2 | `source_borrowing_id` changes only when `banned_until` changes. If `returned_at + N <= T2` (equality included), both stay unchanged; if `returned_at + N > T2`, it becomes the new loan. | [#40](https://github.com/nguyettran-agilityio/ai-tools-training/issues/40#issuecomment-6492558821) |
+| Q-40-3 | When a ban row is reused, `created_at` is kept and `updated_at` is set to now. | [#40](https://github.com/nguyettran-agilityio/ai-tools-training/issues/40#issuecomment-6492558821) |
+| Q-40-8b | An active ban does not block deleting the member. With no active borrowing or open reservation, `DELETE /users/{id}` returns 204 and the ban row is deleted (cascade). *Resolved by Lead.* | [#40](https://github.com/nguyettran-agilityio/ai-tools-training/issues/40#issuecomment-6492558821) |
+| Q-41-1 | The ban date in `message` and `errors[0].message` uses the API's JSON datetime format: `Z` suffix, fractional seconds only when non-zero. It equals `bannedUntil` in the bans report. Do not use `datetime.isoformat()` (`+00:00`). | [#41](https://github.com/nguyettran-agilityio/ai-tools-training/issues/41#issuecomment-6492559388) |
+| Q-41-2 | `OVERDUE_LOAN_HELD` `errors` is ordered by due date ascending (most overdue first). Lead approved. | [#41](https://github.com/nguyettran-agilityio/ai-tools-training/issues/41#issuecomment-6492559388) |
+| Q-42-3 | An invalid `to` returns 422 `VALIDATION_ERROR`, the same as an invalid `from`. | [#42](https://github.com/nguyettran-agilityio/ai-tools-training/issues/42#issuecomment-6492559953) |
+| Q-42-4 | `from` / `to` with a non-UTC offset are converted to UTC before filtering (`astimezone(UTC)`); SQLite ignores the offset when comparing. | [#42](https://github.com/nguyettran-agilityio/ai-tools-training/issues/42#issuecomment-6492559953) |
+| Q-44-1 | The banned demo member is Bob (`bob@example.com`, shared demo member password), not Alice. The seed cheat sheet lists him as banned. Lead approved. | [#44](https://github.com/nguyettran-agilityio/ai-tools-training/issues/44#issuecomment-6492561104) |
+| Q-44-2 | The seeded late return is at seed time minus 1 day, so the ban lasts about `N − 1` days; re-run the seed with `--force` before a demo after that. | [#44](https://github.com/nguyettran-agilityio/ai-tools-training/issues/44#issuecomment-6492561104) |
+| Q-44-3 | After a second `seed_demo --force` run, the late-returned loan, the overdue loan and the future ban each exist exactly once. | [#44](https://github.com/nguyettran-agilityio/ai-tools-training/issues/44#issuecomment-6492561104) |
