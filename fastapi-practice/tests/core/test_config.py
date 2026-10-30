@@ -22,6 +22,7 @@ def test_settings_load_with_defaults(monkeypatch):
     assert settings.access_token_expire_minutes == 60
     assert settings.borrow_limit == 5
     assert settings.loan_duration_days == 14
+    assert settings.late_return_ban_days == 7
     assert settings.cors_origins == ["*"]
 
     get_settings.cache_clear()
@@ -92,3 +93,15 @@ def test_wildcard_cors_outside_prod_is_still_allowed():
     )
 
     assert settings.cors_origins == ["*"]
+
+
+def test_negative_late_return_ban_days_is_rejected(monkeypatch):
+    """`late_return_ban_days` must be >= 0; `-1` fails at load time."""
+    monkeypatch.setenv("JWT_SECRET_KEY", "test-secret-key-with-at-least-32-characters")
+    monkeypatch.setenv("LATE_RETURN_BAN_DAYS", "-1")
+    get_settings.cache_clear()
+
+    with pytest.raises(ValidationError):
+        get_settings()
+
+    get_settings.cache_clear()

@@ -26,11 +26,16 @@ from app.modules.book.schemas import BookRead
 from app.modules.book.services import BookService
 
 # borrowing
-from app.modules.borrowing.mappers import to_borrowing_read
-from app.modules.borrowing.models import Borrowing
-from app.modules.borrowing.repositories import BorrowingRepositoryInterface, BorrowingUpdateFields
-from app.modules.borrowing.repositories_sqlmodel import BorrowingRepository
-from app.modules.borrowing.schemas import BorrowingRead
+from app.modules.borrowing.mappers import to_borrowing_ban_read, to_borrowing_read
+from app.modules.borrowing.models import Borrowing, BorrowingBan
+from app.modules.borrowing.repositories import (
+    BorrowingBanRepositoryInterface,
+    BorrowingBanUpdateFields,
+    BorrowingRepositoryInterface,
+    BorrowingUpdateFields,
+)
+from app.modules.borrowing.repositories_sqlmodel import BorrowingBanRepository, BorrowingRepository
+from app.modules.borrowing.schemas import BorrowingBanRead, BorrowingRead
 from app.modules.borrowing.services import BorrowingService
 
 # category
@@ -118,6 +123,15 @@ def get_borrowing_repository(
     return BorrowingRepository(backend)
 
 
+def get_borrowing_ban_repository(
+    session: Session = Depends(get_session),
+) -> BorrowingBanRepositoryInterface:
+    backend = SQLModelBackend[BorrowingBan, BorrowingBanRead, BorrowingBanUpdateFields](
+        session, BorrowingBan, to_borrowing_ban_read
+    )
+    return BorrowingBanRepository(backend)
+
+
 def get_reservation_repository(
     session: Session = Depends(get_session),
 ) -> ReservationRepositoryInterface:
@@ -142,6 +156,9 @@ def get_borrowing_service(
     book_repository: BookRepositoryInterface = Depends(get_book_repository),
     reservation_repository: ReservationRepositoryInterface = Depends(get_reservation_repository),
     user_repository: UserRepositoryInterface = Depends(get_user_repository),
+    borrowing_ban_repository: BorrowingBanRepositoryInterface = Depends(
+        get_borrowing_ban_repository
+    ),
 ) -> BorrowingService:
     settings = get_settings()
     return BorrowingService(
@@ -153,6 +170,8 @@ def get_borrowing_service(
         settings.loan_duration_days,
         settings.renewal_days,
         get_notifier(),
+        borrowing_ban_repository,
+        settings.late_return_ban_days,
     )
 
 

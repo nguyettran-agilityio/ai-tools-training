@@ -8,7 +8,7 @@ from sqlmodel import Session
 
 from app.core.repository_sqlmodel import SQLModelBackend
 from app.modules.borrowing.mappers import to_borrowing_read
-from app.modules.borrowing.models import Borrowing
+from app.modules.borrowing.models import Borrowing, BorrowingBan
 from app.modules.borrowing.repositories_sqlmodel import BorrowingRepository
 
 
@@ -188,6 +188,155 @@ class TestReturnBook:
 
         assert response.status_code == 404
         assert response.json()["code"] == "NOT_FOUND"
+
+
+class TestLateReturnBan:
+    """Router side of #40: the ban is checked in the `borrowing_ban` table,
+    since no endpoint exposes it yet (#41/#43)."""
+
+    @staticmethod
+    def _borrow_late(client, admin_token, member_token, auth_headers, db_engine, **book):
+        """Borrow through the API, then move `due_date` into the past."""
+        created_book = create_book(client, admin_token, auth_headers, **book)
+        created = borrow(client, member_token, auth_headers, created_book["id"]).json()
+        with Session(db_engine) as session:
+            row = session.get(Borrowing, uuid.UUID(created["id"]))
+            assert row is not None
+            row.due_date = datetime.now(UTC) - timedelta(days=1)
+            session.add(row)
+            session.commit()
+        return created_book, created
+
+    @staticmethod
+    def _ban_for(db_engine, user_id: str) -> BorrowingBan | None:
+        with Session(db_engine) as session:
+            return session.get(BorrowingBan, uuid.UUID(user_id))
+
+    def test_late_return_returns_200_and_bans_the_member(
+        self, client, admin_token, member_token, auth_headers, db_engine
+    ):
+        book, created = self._borrow_late(
+            client, admin_token, member_token, auth_headers, db_engine, totalCopies=2
+        )
+
+        response = return_borrowing(client, member_token, auth_headers, created["id"])
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["status"] == "returned"
+        assert not any("ban" in key.lower() for key in data)
+        assert client.get(f"/books/{book['id']}").json()["availableCopies"] == 2
+
+        ban = self._ban_for(db_engine, created["userId"])
+        assert ban is not None
+        returned_at = datetime.fromisoformat(data["returnedAt"])
+        assert ban.banned_until.replace(tzinfo=UTC) == returned_at + timedelta(days=7)
+        assert ban.source_borrowing_id == uuid.UUID(created["id"])
+
+    def test_on_time_return_returns_200_and_creates_no_ban(
+        self, client, admin_token, member_token, auth_headers, db_engine
+    ):
+        book = create_book(client, admin_token, auth_headers)
+        created = borrow(client, member_token, auth_headers, book["id"]).json()
+
+        response = return_borrowing(client, member_token, auth_headers, created["id"])
+
+        assert response.status_code == 200
+        assert self._ban_for(db_engine, created["userId"]) is None
+
+    def test_someone_elses_late_loan_returns_403_and_creates_no_ban(
+        self, client, admin_token, member_token, second_member_token, auth_headers, db_engine
+    ):
+        _, created = self._borrow_late(client, admin_token, member_token, auth_headers, db_engine)
+        other_id = client.get("/auth/me", headers=auth_headers(second_member_token)).json()["id"]
+
+        response = return_borrowing(client, second_member_token, auth_headers, created["id"])
+
+        assert response.status_code == 403
+        assert response.json() == {
+            "code": "FORBIDDEN",
+            "message": "You can only return your own borrowings",
+            "errors": None,
+        }
+        assert self._ban_for(db_engine, created["userId"]) is None
+        assert self._ban_for(db_engine, other_id) is None
+
+    def test_admin_returning_a_members_late_loan_returns_403_and_creates_no_ban(
+        self, client, admin_token, member_token, auth_headers, db_engine
+    ):
+        _, created = self._borrow_late(client, admin_token, member_token, auth_headers, db_engine)
+
+        response = return_borrowing(client, admin_token, auth_headers, created["id"])
+
+        assert response.status_code == 403
+        assert response.json()["code"] == "FORBIDDEN"
+        assert self._ban_for(db_engine, created["userId"]) is None
+
+    def test_returning_a_late_loan_twice_returns_409_and_keeps_the_ban(
+        self, client, admin_token, member_token, auth_headers, db_engine
+    ):
+        _, created = self._borrow_late(client, admin_token, member_token, auth_headers, db_engine)
+        return_borrowing(client, member_token, auth_headers, created["id"])
+        before = self._ban_for(db_engine, created["userId"])
+        assert before is not None
+
+        response = return_borrowing(client, member_token, auth_headers, created["id"])
+
+        assert response.status_code == 409
+        assert response.json() == {
+            "code": "CONFLICT",
+            "message": "Book already returned",
+            "errors": None,
+        }
+        after = self._ban_for(db_engine, created["userId"])
+        assert after is not None
+        assert after.banned_until == before.banned_until
+
+    def test_late_return_still_notifies_pending_reservers_returns_200(
+        self, client, admin_token, member_token, second_member_token, auth_headers, db_engine
+    ):
+        book, created = self._borrow_late(
+            client, admin_token, member_token, auth_headers, db_engine, totalCopies=1
+        )
+        reserved = client.post(
+            "/reservations", json={"bookId": book["id"]}, headers=auth_headers(second_member_token)
+        )
+        assert reserved.status_code == 201
+
+        response = return_borrowing(client, member_token, auth_headers, created["id"])
+
+        assert response.status_code == 200
+        items = client.get("/reservations/my", headers=auth_headers(second_member_token)).json()[
+            "items"
+        ]
+        [reservation] = [r for r in items if r["bookId"] == book["id"]]
+        assert reservation["status"] == "notified"
+
+    def test_late_return_recorded_before_deploy_does_not_ban_returns_201(
+        self, client, admin_token, member_token, auth_headers, db_engine
+    ):
+        """No backfill: a late return already in the DB (not made through
+        `return_book`) never creates a ban, and the member can still borrow."""
+        old_book = create_book(client, admin_token, auth_headers)
+        me = client.get("/auth/me", headers=auth_headers(member_token)).json()
+        borrowed_at = datetime.now(UTC) - timedelta(days=30)
+        with Session(db_engine) as session:
+            session.add(
+                Borrowing(
+                    user_id=uuid.UUID(me["id"]),
+                    book_id=uuid.UUID(old_book["id"]),
+                    borrowed_at=borrowed_at,
+                    due_date=borrowed_at + timedelta(days=14),
+                    returned_at=borrowed_at + timedelta(days=20),
+                )
+            )
+            session.commit()
+        new_book = create_book(client, admin_token, auth_headers)
+
+        response = borrow(client, member_token, auth_headers, new_book["id"])
+
+        assert response.status_code == 201
+        assert self._ban_for(db_engine, me["id"]) is None
 
 
 class TestOverdueVisibility:

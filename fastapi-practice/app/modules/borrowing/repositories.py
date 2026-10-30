@@ -13,7 +13,7 @@ from typing import TypedDict
 from app.core.repository_interface import CrudRepositoryInterface
 
 # borrowing
-from app.modules.borrowing.schemas import BorrowingRead
+from app.modules.borrowing.schemas import BorrowingBanRead, BorrowingRead
 
 
 class BorrowingUpdateFields(TypedDict, total=False):
@@ -67,4 +67,47 @@ class BorrowingRepositoryInterface(CrudRepositoryInterface[BorrowingRead, Borrow
         concurrent renew requests can both pass the service's "already
         renewed" check and both write. Accepted limitation — the second write
         sets the same `due_date`, so the loan is still extended only once."""
+        ...
+
+
+class BorrowingBanUpdateFields(TypedDict, total=False):
+    """Fields `extend()` changes. The generic `update()` is not used for bans;
+    this only satisfies `CrudRepositoryInterface`'s type parameter."""
+
+    banned_until: datetime
+    source_borrowing_id: uuid.UUID | None
+    updated_at: datetime
+
+
+class BorrowingBanRepositoryInterface(
+    CrudRepositoryInterface[BorrowingBanRead, BorrowingBanUpdateFields]
+):
+    # Keyed by `user_id` (the table's PK), so `get_by_id(user_id)` works as
+    # is. `create()` is not used: every write goes through `extend()`.
+
+    @abc.abstractmethod
+    def get_active_by_user(self, user_id: uuid.UUID, now: datetime) -> BorrowingBanRead | None:
+        """Active means `banned_until > now`; a ban ending exactly at `now`
+        is over."""
+        ...
+
+    @abc.abstractmethod
+    def extend(
+        self,
+        user_id: uuid.UUID,
+        banned_until: datetime,
+        source_borrowing_id: uuid.UUID,
+        now: datetime,
+    ) -> BorrowingBanRead:
+        """Atomic upsert that keeps the later end date. `source_borrowing_id`
+        and `updated_at` change only when `banned_until` actually moves
+        later; an equal or earlier date leaves the row untouched.
+        `created_at` is set on first insert only."""
+        ...
+
+    @abc.abstractmethod
+    def list_active(
+        self, offset: int, limit: int, now: datetime
+    ) -> tuple[list[BorrowingBanRead], int]:
+        """Active bans, soonest-ending first."""
         ...
