@@ -6,8 +6,8 @@ from datetime import UTC, datetime
 
 # Local application
 # borrowing
-from app.modules.borrowing.models import Borrowing
-from app.modules.borrowing.schemas import BorrowingRead
+from app.modules.borrowing.models import Borrowing, BorrowingBan
+from app.modules.borrowing.schemas import BorrowingBanRead, BorrowingRead
 
 
 def _as_utc(value: datetime | None) -> datetime | None:
@@ -31,5 +31,17 @@ def to_borrowing_read(borrowing: Borrowing) -> BorrowingRead:
             "due_date": _as_utc(borrowing.due_date),
             "returned_at": _as_utc(borrowing.returned_at),
             "renewed_at": _as_utc(borrowing.renewed_at),
+        }
+    )
+
+
+def to_borrowing_ban_read(ban: BorrowingBan) -> BorrowingBanRead:
+    return BorrowingBanRead.model_validate(
+        {
+            "user_id": ban.user_id,
+            "banned_until": _as_utc(ban.banned_until),
+            "source_borrowing_id": ban.source_borrowing_id,
+            "created_at": _as_utc(ban.created_at),
+            "updated_at": _as_utc(ban.updated_at),
         }
     )

@@ -86,6 +86,16 @@ def _date_only_to_end_of_day(value: Any) -> Any:
 ReportUpperBound = Annotated[datetime, BeforeValidator(_date_only_to_end_of_day)]
 
 
+class BorrowingBanRead(CamelModel):
+    user_id: uuid.UUID
+    banned_until: datetime
+    source_borrowing_id: uuid.UUID | None
+    # Not returned by any endpoint; kept so tests can check it survives an
+    # `extend` that reuses the row.
+    created_at: datetime
+    updated_at: datetime
+
+
 class BorrowOutcome(StrEnum):
     BORROWED = "borrowed"
     RESERVED = "reserved"

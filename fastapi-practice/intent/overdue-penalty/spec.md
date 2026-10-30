@@ -337,7 +337,7 @@ QA questions from the test matrix (#45) that exposed real gaps in the tickets or
 |---|---|---|
 | Q-40-1 | With `late_return_ban_days = 0`, a late return still upserts the `borrowing_ban` row with `banned_until = MAX(previous, returned_at)`. It is never active. | [#40](https://github.com/nguyettran-agilityio/ai-tools-training/issues/40#issuecomment-6492558821) |
 | Q-40-2 | `source_borrowing_id` changes only when `banned_until` changes. If `returned_at + N <= T2` (equality included), both stay unchanged; if `returned_at + N > T2`, it becomes the new loan. | [#40](https://github.com/nguyettran-agilityio/ai-tools-training/issues/40#issuecomment-6492558821) |
-| Q-40-3 | When a ban row is reused, `created_at` is kept and `updated_at` is set to now. | [#40](https://github.com/nguyettran-agilityio/ai-tools-training/issues/40#issuecomment-6492558821) |
+| Q-40-3 | ~~When a ban row is reused, `created_at` is kept and `updated_at` is set to now.~~ *Superseded by B-40-1 (§10.1).* | [#40](https://github.com/nguyettran-agilityio/ai-tools-training/issues/40#issuecomment-6492558821) |
 | Q-40-8b | An active ban does not block deleting the member. With no active borrowing or open reservation, `DELETE /users/{id}` returns 204 and the ban row is deleted (cascade). *Resolved by Lead.* | [#40](https://github.com/nguyettran-agilityio/ai-tools-training/issues/40#issuecomment-6492558821) |
 | Q-41-1 | The ban date in `message` and `errors[0].message` uses the API's JSON datetime format: `Z` suffix, fractional seconds only when non-zero. It equals `bannedUntil` in the bans report. Do not use `datetime.isoformat()` (`+00:00`). | [#41](https://github.com/nguyettran-agilityio/ai-tools-training/issues/41#issuecomment-6492559388) |
 | Q-41-2 | `OVERDUE_LOAN_HELD` `errors` is ordered by due date ascending (most overdue first). Lead approved. | [#41](https://github.com/nguyettran-agilityio/ai-tools-training/issues/41#issuecomment-6492559388) |
@@ -346,3 +346,13 @@ QA questions from the test matrix (#45) that exposed real gaps in the tickets or
 | Q-44-1 | The banned demo member is Bob (`bob@example.com`, shared demo member password), not Alice. The seed cheat sheet lists him as banned. Lead approved. | [#44](https://github.com/nguyettran-agilityio/ai-tools-training/issues/44#issuecomment-6492561104) |
 | Q-44-2 | The seeded late return is at seed time minus 1 day, so the ban lasts about `N − 1` days; re-run the seed with `--force` before a demo after that. | [#44](https://github.com/nguyettran-agilityio/ai-tools-training/issues/44#issuecomment-6492561104) |
 | Q-44-3 | After a second `seed_demo --force` run, the late-returned loan, the overdue loan and the future ban each exist exactly once. | [#44](https://github.com/nguyettran-agilityio/ai-tools-training/issues/44#issuecomment-6492561104) |
+
+### 10.1 Decisions made during build
+
+Dev questions raised while implementing, agreed by BA. Where a decision replaces an earlier answer, the "Replaces" column names it.
+
+| ID | Decision | Replaces | Issue |
+|---|---|---|---|
+| B-40-1 | `updated_at` changes only when `banned_until` actually changes, in the same upsert and by the same rule as `source_borrowing_id` (Q-40-2). If `returned_at + N <= banned_until`, the row is left untouched. `created_at` is kept on every reuse. | Q-40-3 | [#40](https://github.com/nguyettran-agilityio/ai-tools-training/issues/40#issuecomment-6493325742) |
+| B-42-1 | The overdue and late-returns reports use a new per-page cache helper: each distinct `user_id` / `book_id` is fetched once per page (§5.4). `notify_overdue` is not changed and still calls `get_by_id` for every row. | — | [#42](https://github.com/nguyettran-agilityio/ai-tools-training/issues/42#issuecomment-6493326284) |
+| B-42-2 | A date-only `to` (e.g. `to=2026-11-01`) covers that whole UTC day: the filter is `returned_at < 2026-11-02T00:00:00Z`. The `from > to` check (400) uses that end-of-day bound, so `from=2026-11-01T12:00:00Z&to=2026-11-01` is valid. A `to` with a time part, including `T00:00:00`, keeps the inclusive bound `returned_at <= to` (Q-42-4 still applies). A date-only `from` already means 00:00 UTC of that day, so it is unchanged. | Dev Q2 on #42 (midnight UTC, inclusive), agreed earlier | [#42](https://github.com/nguyettran-agilityio/ai-tools-training/issues/42#issuecomment-6518851128) |

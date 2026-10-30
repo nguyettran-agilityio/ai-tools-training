@@ -21,7 +21,10 @@ from app.modules.book.repositories import BookRepositoryInterface
 from app.modules.book.schemas import BookRead
 
 # borrowing
-from app.modules.borrowing.repositories import BorrowingRepositoryInterface
+from app.modules.borrowing.repositories import (
+    BorrowingBanRepositoryInterface,
+    BorrowingRepositoryInterface,
+)
 from app.modules.borrowing.schemas import (
     BorrowingRead,
     BorrowingReportRow,
@@ -64,6 +67,8 @@ class BorrowingService:
         loan_duration_days: int,
         renewal_days: int,
         notifier: Notifier,
+        borrowing_ban_repository: BorrowingBanRepositoryInterface,
+        late_return_ban_days: int,
     ) -> None:
         self.borrowing_repository = borrowing_repository
         self.book_repository = book_repository
@@ -84,6 +89,8 @@ class BorrowingService:
         # `Notifier` interface, not a concrete notifier/service class — same
         # decoupling reasoning as `reservation_repository` above.
         self.notifier = notifier
+        self.borrowing_ban_repository = borrowing_ban_repository
+        self.late_return_ban_days = late_return_ban_days
 
     def borrow(self, user_id: uuid.UUID, data: BorrowRequest) -> BorrowResult:
         """Borrow a book if a copy is available (atomic claim, safe under
@@ -207,7 +214,8 @@ class BorrowingService:
 
     def return_book(self, user_id: uuid.UUID, borrowing_id: uuid.UUID) -> BorrowingRead:
         """Mark a borrowing returned and give the copy back to the book's
-        `available_copies`, capped at `total_copies` so it can never overshoot."""
+        `available_copies`, capped at `total_copies` so it can never overshoot.
+        A late return also bans the member for `late_return_ban_days`."""
         borrowing = get_or_404(self.borrowing_repository, borrowing_id, "Borrowing not found")
 
         if borrowing.user_id != user_id:
@@ -216,11 +224,26 @@ class BorrowingService:
         if borrowing.returned_at is not None:
             raise ConflictError("Book already returned")
 
-        borrowing = self.borrowing_repository.mark_returned(borrowing_id, _now_utc())
+        # One instant for `returned_at`, the lateness test and the ban, so
+        # they can never disagree.
+        now = _now_utc()
+        borrowing = self.borrowing_repository.mark_returned(borrowing_id, now)
 
         # Atomic UPDATE (capped at total_copies), not read-then-write — same
         # reasoning as the claim in `borrow()`.
         self.book_repository.increment_available_copies(borrowing.book_id)
+
+        # Strictly after: a return exactly at `due_date` is on time. Both
+        # sides are UTC-aware (`to_borrowing_read` normalizes `due_date`).
+        if now > borrowing.due_date:
+            # The repository keeps the later of the old and new end dates
+            # (bans never stack), so no read is needed here.
+            self.borrowing_ban_repository.extend(
+                user_id,
+                now + timedelta(days=self.late_return_ban_days),
+                borrowing.id,
+                now,
+            )
 
         return borrowing
 

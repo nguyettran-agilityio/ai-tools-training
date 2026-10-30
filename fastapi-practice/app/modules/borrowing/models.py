@@ -24,3 +24,20 @@ class Borrowing(SQLModel, table=True):
     # renewed, which is all the "renew at most once" rule needs.
     renewed_at: datetime | None = None
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+
+
+class BorrowingBan(SQLModel, table=True):
+    __tablename__ = "borrowing_ban"
+
+    # One row per member: `BorrowingBanRepository.extend` upserts on this PK,
+    # and an expired row is reused on the next late return.
+    user_id: uuid.UUID = Field(foreign_key="user.id", ondelete="CASCADE", primary_key=True)
+    banned_until: datetime = Field(index=True)
+    # The late return that last set or extended the ban. `SET NULL`, not
+    # `CASCADE`: deleting a book cascades to its borrowings, but the ban
+    # itself must survive.
+    source_borrowing_id: uuid.UUID | None = Field(
+        default=None, foreign_key="borrowing.id", ondelete="SET NULL"
+    )
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))

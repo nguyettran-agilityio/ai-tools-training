@@ -19,6 +19,7 @@ from app.modules.user.enums import UserRole
 from app.modules.user.schemas import UserRead
 from tests.fakes import (
     FakeBookRepository,
+    FakeBorrowingBanRepository,
     FakeBorrowingRepository,
     FakeReservationRepository,
     FakeUserRepository,
@@ -71,6 +72,8 @@ def service(book_repository, borrowing_repository, user_repository):
         loan_duration_days=14,
         renewal_days=14,
         notifier=InMemoryNotifier(),
+        borrowing_ban_repository=FakeBorrowingBanRepository(),
+        late_return_ban_days=7,
     )
 
 

@@ -1,5 +1,6 @@
-"""SQLModel-backed concrete `BorrowingRepositoryInterface` — the only file in
-this module allowed to import `Borrowing` or `sqlmodel` itself.
+"""SQLModel-backed concrete `BorrowingRepositoryInterface` and
+`BorrowingBanRepositoryInterface` — the only file in this module allowed to
+import `Borrowing`, `BorrowingBan` or `sqlmodel` itself.
 """
 
 # Standard library
@@ -7,6 +8,8 @@ import uuid
 from datetime import UTC, datetime
 
 # Third-party
+from sqlalchemy import case
+from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlmodel import and_, col, func, select
 
 # Local application
@@ -14,10 +17,15 @@ from sqlmodel import and_, col, func, select
 from app.core.repository_sqlmodel import SQLModelBackend, apply_filters
 
 # borrowing
-from app.modules.borrowing.mappers import to_borrowing_read
-from app.modules.borrowing.models import Borrowing
-from app.modules.borrowing.repositories import BorrowingRepositoryInterface, BorrowingUpdateFields
-from app.modules.borrowing.schemas import BorrowingRead
+from app.modules.borrowing.mappers import to_borrowing_ban_read, to_borrowing_read
+from app.modules.borrowing.models import Borrowing, BorrowingBan
+from app.modules.borrowing.repositories import (
+    BorrowingBanRepositoryInterface,
+    BorrowingBanUpdateFields,
+    BorrowingRepositoryInterface,
+    BorrowingUpdateFields,
+)
+from app.modules.borrowing.schemas import BorrowingBanRead, BorrowingRead
 
 
 class BorrowingRepository(BorrowingRepositoryInterface):
@@ -139,3 +147,74 @@ class BorrowingRepository(BorrowingRepositoryInterface):
         self, id: uuid.UUID, due_date: datetime, renewed_at: datetime
     ) -> BorrowingRead:
         return self.backend.update(id, {"due_date": due_date, "renewed_at": renewed_at})
+
+
+class BorrowingBanRepository(BorrowingBanRepositoryInterface):
+    backend: SQLModelBackend[BorrowingBan, BorrowingBanRead, BorrowingBanUpdateFields]
+
+    def get_active_by_user(self, user_id: uuid.UUID, now: datetime) -> BorrowingBanRead | None:
+        ban = self.backend.session.exec(
+            select(BorrowingBan).where(
+                BorrowingBan.user_id == user_id, BorrowingBan.banned_until > now
+            )
+        ).first()
+        return to_borrowing_ban_read(ban) if ban is not None else None
+
+    def extend(
+        self,
+        user_id: uuid.UUID,
+        banned_until: datetime,
+        source_borrowing_id: uuid.UUID,
+        now: datetime,
+    ) -> BorrowingBanRead:
+        """One `INSERT ... ON CONFLICT DO UPDATE`, not read-then-write, so two
+        concurrent late returns cannot lose the later date. SQLite-specific
+        (scalar `MAX(a, b)`); revisit if the DB changes. Inside `SET`, the
+        bare column refers to the row's old value, so every `CASE` below
+        compares against the old `banned_until`, whatever the column order."""
+        stmt = sqlite_insert(BorrowingBan).values(
+            user_id=user_id,
+            banned_until=banned_until,
+            source_borrowing_id=source_borrowing_id,
+            created_at=now,
+            updated_at=now,
+        )
+        moves_later = stmt.excluded.banned_until > BorrowingBan.banned_until
+        stmt = stmt.on_conflict_do_update(
+            index_elements=["user_id"],
+            # `created_at` is left out on purpose: it keeps the first insert.
+            set_={
+                "banned_until": func.max(BorrowingBan.banned_until, stmt.excluded.banned_until),
+                "source_borrowing_id": case(
+                    (moves_later, stmt.excluded.source_borrowing_id),
+                    else_=BorrowingBan.source_borrowing_id,
+                ),
+                "updated_at": case(
+                    (moves_later, stmt.excluded.updated_at), else_=BorrowingBan.updated_at
+                ),
+            },
+        )
+        self.backend.session.exec(stmt)
+        self.backend.session.flush()
+        # `populate_existing`: the identity map may still hold the pre-upsert
+        # row from an earlier read in this session.
+        ban = self.backend.session.exec(
+            select(BorrowingBan)
+            .where(BorrowingBan.user_id == user_id)
+            .execution_options(populate_existing=True)
+        ).one()
+        return to_borrowing_ban_read(ban)
+
+    def list_active(
+        self, offset: int, limit: int, now: datetime
+    ) -> tuple[list[BorrowingBanRead], int]:
+        count_stmt, list_stmt = apply_filters(
+            select(func.count()).select_from(BorrowingBan),
+            select(BorrowingBan),
+            [BorrowingBan.banned_until > now],
+        )
+        total = self.backend.session.exec(count_stmt).one()
+        items = self.backend.session.exec(
+            list_stmt.order_by(BorrowingBan.banned_until.asc()).offset(offset).limit(limit)
+        ).all()
+        return [to_borrowing_ban_read(item) for item in items], total
