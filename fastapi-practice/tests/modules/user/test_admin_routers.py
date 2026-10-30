@@ -6,7 +6,7 @@ from datetime import UTC, datetime, timedelta
 
 from sqlmodel import Session
 
-from app.modules.borrowing.models import Borrowing
+from app.modules.borrowing.models import Borrowing, BorrowingBan
 from app.modules.reservation.models import Reservation
 
 
@@ -275,6 +275,41 @@ class TestDeleteUser:
         response = client.delete(f"/users/{other['id']}", headers=auth_headers(admin_token))
 
         assert response.status_code == 204
+
+    def test_user_with_active_ban_and_only_returned_borrowing_returns_204(
+        self, client, admin_token, auth_headers, db_engine
+    ):
+        """An active ban does not block deletion; the ban row goes with the
+        user (FK `ON DELETE CASCADE`)."""
+        other = create_user(client, admin_token, auth_headers).json()
+        user_id = uuid.UUID(other["id"])
+        book_id = uuid.UUID(seed_book(client, admin_token, auth_headers))
+
+        with Session(db_engine) as session:
+            borrowed_at = datetime.now(UTC) - timedelta(days=20)
+            loan = Borrowing(
+                user_id=user_id,
+                book_id=book_id,
+                borrowed_at=borrowed_at,
+                due_date=borrowed_at + timedelta(days=14),
+                returned_at=datetime.now(UTC),
+            )
+            session.add(loan)
+            session.flush()
+            session.add(
+                BorrowingBan(
+                    user_id=user_id,
+                    banned_until=datetime.now(UTC) + timedelta(days=7),
+                    source_borrowing_id=loan.id,
+                )
+            )
+            session.commit()
+
+        response = client.delete(f"/users/{other['id']}", headers=auth_headers(admin_token))
+
+        assert response.status_code == 204
+        with Session(db_engine) as session:
+            assert session.get(BorrowingBan, user_id) is None
 
     def test_user_with_open_reservation_returns_409(
         self, client, admin_token, auth_headers, db_engine

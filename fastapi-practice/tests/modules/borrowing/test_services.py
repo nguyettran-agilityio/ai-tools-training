@@ -18,6 +18,7 @@ from app.modules.borrowing.schemas import BorrowOutcome, BorrowRequest
 from app.modules.borrowing.services import BorrowingService
 from tests.fakes import (
     FakeBookRepository,
+    FakeBorrowingBanRepository,
     FakeBorrowingRepository,
     FakeReservationRepository,
     FakeUserRepository,
@@ -64,6 +65,8 @@ def service(
         # renewal extension comes from `renewal_days`, not the loan length.
         renewal_days=7,
         notifier=notifier,
+        borrowing_ban_repository=FakeBorrowingBanRepository(),
+        late_return_ban_days=7,
     )
 
 

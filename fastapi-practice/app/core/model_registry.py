@@ -8,7 +8,7 @@ engine via `SQLModel.metadata.create_all(...)`."""
 from app.modules.book.models import Book
 
 # borrowing
-from app.modules.borrowing.models import Borrowing
+from app.modules.borrowing.models import Borrowing, BorrowingBan
 
 # category
 from app.modules.category.models import Category
@@ -19,4 +19,4 @@ from app.modules.reservation.models import Reservation
 # user
 from app.modules.user.models import User
 
-__all__ = ["Book", "Borrowing", "Category", "Reservation", "User"]
+__all__ = ["Book", "Borrowing", "BorrowingBan", "Category", "Reservation", "User"]

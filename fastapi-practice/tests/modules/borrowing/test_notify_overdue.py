@@ -19,9 +19,9 @@ from app.core.repository_sqlmodel import SQLModelBackend
 from app.modules.book.mappers import to_book_read
 from app.modules.book.models import Book
 from app.modules.book.repositories_sqlmodel import BookRepository
-from app.modules.borrowing.mappers import to_borrowing_read
-from app.modules.borrowing.models import Borrowing
-from app.modules.borrowing.repositories_sqlmodel import BorrowingRepository
+from app.modules.borrowing.mappers import to_borrowing_ban_read, to_borrowing_read
+from app.modules.borrowing.models import Borrowing, BorrowingBan
+from app.modules.borrowing.repositories_sqlmodel import BorrowingBanRepository, BorrowingRepository
 from app.modules.borrowing.services import BorrowingService
 from app.modules.reservation.mappers import to_reservation_read
 from app.modules.reservation.models import Reservation
@@ -198,6 +198,10 @@ class TestNotifyOverdueService:
                 loan_duration_days=14,
                 renewal_days=14,
                 notifier=get_notifier(),
+                borrowing_ban_repository=BorrowingBanRepository(
+                    SQLModelBackend(session, BorrowingBan, to_borrowing_ban_read)
+                ),
+                late_return_ban_days=7,
             )
             count = asyncio.run(service.notify_overdue())
 
@@ -236,6 +240,10 @@ class TestNotifyOverdueService:
                 loan_duration_days=14,
                 renewal_days=14,
                 notifier=get_notifier(),
+                borrowing_ban_repository=BorrowingBanRepository(
+                    SQLModelBackend(session, BorrowingBan, to_borrowing_ban_read)
+                ),
+                late_return_ban_days=7,
             )
             count = asyncio.run(service.notify_overdue())
 

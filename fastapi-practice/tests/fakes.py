@@ -11,8 +11,13 @@ from typing import Any
 # Local application
 from app.modules.book.repositories import BookRepositoryInterface, BookUpdateFields
 from app.modules.book.schemas import BookRead
-from app.modules.borrowing.repositories import BorrowingRepositoryInterface, BorrowingUpdateFields
-from app.modules.borrowing.schemas import BorrowingRead
+from app.modules.borrowing.repositories import (
+    BorrowingBanRepositoryInterface,
+    BorrowingBanUpdateFields,
+    BorrowingRepositoryInterface,
+    BorrowingUpdateFields,
+)
+from app.modules.borrowing.schemas import BorrowingBanRead, BorrowingRead
 from app.modules.category.repositories import CategoryRepositoryInterface, CategoryUpdateFields
 from app.modules.category.schemas import CategoryRead
 from app.modules.reservation.enums import ReservationStatus
@@ -287,6 +292,77 @@ class FakeBorrowingRepository(BorrowingRepositoryInterface):
         self, id: uuid.UUID, due_date: datetime, renewed_at: datetime
     ) -> BorrowingRead:
         return self.update(id, {"due_date": due_date, "renewed_at": renewed_at})
+
+
+class FakeBorrowingBanRepository(BorrowingBanRepositoryInterface):
+    """Same semantics as the SQL upsert in `BorrowingBanRepository.extend`:
+    keep the later date; move `source_borrowing_id`/`updated_at` only when
+    the date moves later; keep `created_at`."""
+
+    def __init__(self) -> None:
+        self._rows: dict[uuid.UUID, BorrowingBanRead] = {}
+
+    def get_by_id(self, id: uuid.UUID) -> BorrowingBanRead | None:
+        return self._rows.get(id)
+
+    def get_active_by_user(self, user_id: uuid.UUID, now: datetime) -> BorrowingBanRead | None:
+        ban = self._rows.get(user_id)
+        return ban if ban is not None and ban.banned_until > now else None
+
+    def extend(
+        self,
+        user_id: uuid.UUID,
+        banned_until: datetime,
+        source_borrowing_id: uuid.UUID,
+        now: datetime,
+    ) -> BorrowingBanRead:
+        existing = self._rows.get(user_id)
+        if existing is None:
+            ban = BorrowingBanRead(
+                user_id=user_id,
+                banned_until=banned_until,
+                source_borrowing_id=source_borrowing_id,
+                created_at=now,
+                updated_at=now,
+            )
+        elif banned_until > existing.banned_until:
+            ban = existing.model_copy(
+                update={
+                    "banned_until": banned_until,
+                    "source_borrowing_id": source_borrowing_id,
+                    "updated_at": now,
+                }
+            )
+        else:
+            ban = existing
+        self._rows[user_id] = ban
+        return ban
+
+    def list_active(
+        self, offset: int, limit: int, now: datetime
+    ) -> tuple[list[BorrowingBanRead], int]:
+        items = sorted(
+            (row for row in self._rows.values() if row.banned_until > now),
+            key=lambda row: row.banned_until,
+        )
+        return items[offset : offset + limit], len(items)
+
+    def list(self, offset: int, limit: int) -> tuple[list[BorrowingBanRead], int]:
+        items = list(self._rows.values())
+        return items[offset : offset + limit], len(items)
+
+    def create(self, data: dict[str, Any]) -> BorrowingBanRead:
+        ban = BorrowingBanRead(**data)
+        self._rows[ban.user_id] = ban
+        return ban
+
+    def update(self, id: uuid.UUID, changes: BorrowingBanUpdateFields) -> BorrowingBanRead:
+        updated = self._rows[id].model_copy(update=changes)
+        self._rows[id] = updated
+        return updated
+
+    def delete(self, id: uuid.UUID) -> None:
+        self._rows.pop(id, None)
 
 
 class FakeReservationRepository(ReservationRepositoryInterface):

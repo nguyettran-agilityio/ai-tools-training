@@ -55,6 +55,16 @@ class BorrowingRead(CamelModel):
         return BorrowingStatus.ACTIVE
 
 
+class BorrowingBanRead(CamelModel):
+    user_id: uuid.UUID
+    banned_until: datetime
+    source_borrowing_id: uuid.UUID | None
+    # Not returned by any endpoint; kept so tests can check it survives an
+    # `extend` that reuses the row.
+    created_at: datetime
+    updated_at: datetime
+
+
 class BorrowOutcome(StrEnum):
     BORROWED = "borrowed"
     RESERVED = "reserved"
