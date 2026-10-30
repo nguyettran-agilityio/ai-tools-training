@@ -3,13 +3,15 @@
 """
 
 # Standard library
+import re
 import uuid
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime, time
 from enum import StrEnum
+from typing import Annotated, Any
 
 # Third-party
-from pydantic import computed_field
+from pydantic import BeforeValidator, computed_field
 
 # Local application
 # core
@@ -53,6 +55,35 @@ class BorrowingRead(CamelModel):
         if self.due_date < datetime.now(UTC):
             return BorrowingStatus.OVERDUE
         return BorrowingStatus.ACTIVE
+
+
+class BorrowingReportRow(BorrowingRead):
+    """Overdue + late-returns report row: every `BorrowingRead` field
+    (including the computed `status`) plus the member's email and the book
+    title. Both are non-null — borrowings cascade on user/book delete."""
+
+    user_email: str
+    book_title: str
+
+
+_DATE_ONLY = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+
+
+def _date_only_to_end_of_day(value: Any) -> Any:
+    """A date-only upper bound (`to=2026-11-01`) means the whole of that day
+    in UTC. Checked on the raw string: once parsed, `2026-11-01` and
+    `2026-11-01T00:00:00` are the same datetime. Anything else passes through
+    to the normal datetime parsing (and its 422 on bad input)."""
+    if isinstance(value, str) and _DATE_ONLY.match(value):
+        try:
+            day = date.fromisoformat(value)
+        except ValueError:
+            return value
+        return datetime.combine(day, time.max, tzinfo=UTC)
+    return value
+
+
+ReportUpperBound = Annotated[datetime, BeforeValidator(_date_only_to_end_of_day)]
 
 
 class BorrowOutcome(StrEnum):

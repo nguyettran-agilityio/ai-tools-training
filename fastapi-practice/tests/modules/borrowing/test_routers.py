@@ -238,3 +238,356 @@ class TestAtomicity:
         # directly instead of via a second HTTP call.
         book_after = client.get(f"/books/{book['id']}").json()
         assert book_after["availableCopies"] == 1
+
+
+class TestReports:
+    """`GET /borrowings/reports/overdue` and `/reports/late-returns` (#42)."""
+
+    REPORT_URLS = ("/borrowings/reports/overdue", "/borrowings/reports/late-returns")
+
+    def _member_id(self, client, member_token, auth_headers) -> uuid.UUID:
+        me = client.get("/auth/me", headers=auth_headers(member_token)).json()
+        return uuid.UUID(me["id"])
+
+    def _add_borrowing(
+        self,
+        db_engine,
+        user_id: uuid.UUID,
+        book_id: str,
+        *,
+        due_date: datetime,
+        returned_at: datetime | None = None,
+        borrowed_at: datetime | None = None,
+    ) -> uuid.UUID:
+        with Session(db_engine) as session:
+            borrowing = Borrowing(
+                user_id=user_id,
+                book_id=uuid.UUID(book_id),
+                borrowed_at=borrowed_at or due_date - timedelta(days=14),
+                due_date=due_date,
+                returned_at=returned_at,
+            )
+            session.add(borrowing)
+            session.commit()
+            return borrowing.id
+
+    def _add_late_return(self, db_engine, user_id, book_id, returned_at: datetime) -> uuid.UUID:
+        return self._add_borrowing(
+            db_engine,
+            user_id,
+            book_id,
+            due_date=returned_at - timedelta(days=1),
+            returned_at=returned_at,
+        )
+
+    def _late_returns(self, client, admin_token, auth_headers, **params):
+        return client.get(
+            "/borrowings/reports/late-returns", params=params, headers=auth_headers(admin_token)
+        )
+
+    def test_overdue_report_rows_order_and_utc_z_datetimes(
+        self, client, admin_token, member_token, auth_headers, db_engine
+    ):
+        """TC-42-01, plus every datetime serialized with `Z`, not `+00:00`."""
+        book = create_book(client, admin_token, auth_headers, title="Overdue Book")
+        member_id = self._member_id(client, member_token, auth_headers)
+        now = datetime.now(UTC)
+        older = self._add_borrowing(
+            db_engine, member_id, book["id"], due_date=now - timedelta(days=5)
+        )
+        newer = self._add_borrowing(
+            db_engine, member_id, book["id"], due_date=now - timedelta(days=1)
+        )
+        self._add_borrowing(db_engine, member_id, book["id"], due_date=now + timedelta(days=3))
+        self._add_borrowing(
+            db_engine,
+            member_id,
+            book["id"],
+            due_date=now - timedelta(days=4),
+            returned_at=now - timedelta(days=2),
+        )
+
+        response = client.get(
+            "/borrowings/reports/overdue?page=1&pageSize=20", headers=auth_headers(admin_token)
+        )
+
+        assert response.status_code == 200
+        body = response.json()
+        assert set(body) == {"items", "total", "page", "pageSize", "totalPages"}
+        assert body["total"] == 2
+        assert [row["id"] for row in body["items"]] == [str(newer), str(older)]
+        row = body["items"][0]
+        assert row["userEmail"] == "member@example.com"
+        assert row["bookTitle"] == "Overdue Book"
+        assert row["status"] == "overdue"
+        assert row["userId"] == str(member_id)
+        assert row["bookId"] == book["id"]
+        assert row["returnedAt"] is None
+        for field in ("borrowedAt", "dueDate"):
+            assert row[field].endswith("Z"), row[field]
+            assert "+00:00" not in row[field]
+
+    def test_overdue_report_pages_do_not_overlap(
+        self, client, admin_token, member_token, auth_headers, db_engine
+    ):
+        """TC-42-02."""
+        book = create_book(client, admin_token, auth_headers)
+        member_id = self._member_id(client, member_token, auth_headers)
+        now = datetime.now(UTC)
+        for days in (1, 2, 3):
+            self._add_borrowing(
+                db_engine, member_id, book["id"], due_date=now - timedelta(days=days)
+            )
+
+        headers = auth_headers(admin_token)
+        page1 = client.get("/borrowings/reports/overdue?page=1&pageSize=2", headers=headers)
+        page2 = client.get("/borrowings/reports/overdue?page=2&pageSize=2", headers=headers)
+
+        assert page1.json()["total"] == 3
+        assert page2.json()["total"] == 3
+        ids1 = {row["id"] for row in page1.json()["items"]}
+        ids2 = {row["id"] for row in page2.json()["items"]}
+        assert len(ids1) == 2
+        assert len(ids2) == 1
+        assert ids1.isdisjoint(ids2)
+
+    def test_late_returns_contents_order_and_utc_z_datetimes(
+        self, client, admin_token, member_token, auth_headers, db_engine
+    ):
+        """TC-42-03 (exactly-at-due-date is covered in the repository test)."""
+        book = create_book(client, admin_token, auth_headers, title="Late Book")
+        member_id = self._member_id(client, member_token, auth_headers)
+        first = self._add_late_return(
+            db_engine, member_id, book["id"], datetime(2026, 11, 1, 8, tzinfo=UTC)
+        )
+        second = self._add_late_return(
+            db_engine, member_id, book["id"], datetime(2026, 11, 2, 8, tzinfo=UTC)
+        )
+        due_date = datetime(2026, 11, 3, tzinfo=UTC)
+        self._add_borrowing(
+            db_engine,
+            member_id,
+            book["id"],
+            due_date=due_date,
+            returned_at=due_date - timedelta(hours=1),
+        )
+
+        response = self._late_returns(client, admin_token, auth_headers)
+
+        assert response.status_code == 200
+        body = response.json()
+        assert body["total"] == 2
+        assert [row["id"] for row in body["items"]] == [str(second), str(first)]
+        row = body["items"][0]
+        assert row["userEmail"] == "member@example.com"
+        assert row["bookTitle"] == "Late Book"
+        assert row["status"] == "returned"
+        assert row["returnedAt"] == "2026-11-02T08:00:00Z"
+        for field in ("borrowedAt", "dueDate", "returnedAt"):
+            assert row[field].endswith("Z"), row[field]
+            assert "+00:00" not in row[field]
+
+    def test_late_returns_bounds(self, client, admin_token, member_token, auth_headers, db_engine):
+        """TC-42-04 / 05 / 06 and Q-42-4 through the real SQLite comparison."""
+        book = create_book(client, admin_token, auth_headers)
+        member_id = self._member_id(client, member_token, auth_headers)
+        t1, t2, t3 = (datetime(2026, 11, day, tzinfo=UTC) for day in (1, 2, 3))
+        ids = {
+            t: str(self._add_late_return(db_engine, member_id, book["id"], t)) for t in (t1, t2, t3)
+        }
+
+        def found(**params) -> set[str]:
+            response = self._late_returns(client, admin_token, auth_headers, **params)
+            assert response.status_code == 200, response.json()
+            return {row["id"] for row in response.json()["items"]}
+
+        # Inclusive on both ends.
+        assert found(**{"from": "2026-11-01T00:00:00Z", "to": "2026-11-03T00:00:00Z"}) == set(
+            ids.values()
+        )
+        assert found(**{"from": "2026-11-02T00:00:00Z", "to": "2026-11-02T00:00:00Z"}) == {ids[t2]}
+        # Single bound.
+        assert found(**{"from": "2026-11-02T00:00:00Z"}) == {ids[t2], ids[t3]}
+        assert found(to="2026-11-02T00:00:00Z") == {ids[t1], ids[t2]}
+        # No timezone = UTC.
+        assert found(**{"from": "2026-11-03T00:00:00"}) == {ids[t3]}
+        # Non-UTC offset is converted: 07:00+07:00 == 00:00Z.
+        assert found(**{"from": "2026-11-03T07:00:00+07:00"}) == {ids[t3]}
+        assert found(to="2026-11-01T07:00:00+07:00") == {ids[t1]}
+
+    def _add_late_returns(
+        self, client, admin_token, member_token, auth_headers, db_engine, *returned_at: datetime
+    ) -> dict[datetime, str]:
+        book = create_book(client, admin_token, auth_headers)
+        member_id = self._member_id(client, member_token, auth_headers)
+        return {
+            t: str(self._add_late_return(db_engine, member_id, book["id"], t)) for t in returned_at
+        }
+
+    def _found_ids(self, client, admin_token, auth_headers, **params) -> set[str]:
+        response = self._late_returns(client, admin_token, auth_headers, **params)
+        assert response.status_code == 200, response.json()
+        return {row["id"] for row in response.json()["items"]}
+
+    def test_date_only_to_covers_the_whole_utc_day(
+        self, client, admin_token, member_token, auth_headers, db_engine
+    ):
+        """TC-42-15 (B-42-2): `to=YYYY-MM-DD` = end of that day UTC."""
+        start = datetime(2026, 11, 1, tzinfo=UTC)
+        last = datetime(2026, 11, 1, 23, 59, 59, 999999, tzinfo=UTC)
+        next_midnight = datetime(2026, 11, 2, tzinfo=UTC)
+        ids = self._add_late_returns(
+            client, admin_token, member_token, auth_headers, db_engine, start, last, next_midnight
+        )
+
+        found = self._found_ids(client, admin_token, auth_headers, to="2026-11-01")
+
+        assert found == {ids[start], ids[last]}
+
+    @pytest.mark.parametrize("to", ["2026-11-01T00:00:00Z", "2026-11-01T00:00:00"])
+    def test_to_with_a_time_part_keeps_its_literal_meaning(
+        self, client, admin_token, member_token, auth_headers, db_engine, to
+    ):
+        """TC-42-16 (B-42-2)."""
+        midnight = datetime(2026, 11, 1, tzinfo=UTC)
+        morning = datetime(2026, 11, 1, 10, tzinfo=UTC)
+        ids = self._add_late_returns(
+            client, admin_token, member_token, auth_headers, db_engine, midnight, morning
+        )
+
+        assert self._found_ids(client, admin_token, auth_headers, to=to) == {ids[midnight]}
+
+    def test_date_only_from_and_to_on_the_same_day(
+        self, client, admin_token, member_token, auth_headers, db_engine
+    ):
+        """TC-42-17 (B-42-2)."""
+        day_before = datetime(2026, 10, 31, 23, 59, 59, tzinfo=UTC)
+        noon = datetime(2026, 11, 1, 12, tzinfo=UTC)
+        next_midnight = datetime(2026, 11, 2, tzinfo=UTC)
+        ids = self._add_late_returns(
+            client,
+            admin_token,
+            member_token,
+            auth_headers,
+            db_engine,
+            day_before,
+            noon,
+            next_midnight,
+        )
+
+        found = self._found_ids(
+            client, admin_token, auth_headers, **{"from": "2026-11-01", "to": "2026-11-01"}
+        )
+
+        assert found == {ids[noon]}
+
+    def test_from_later_the_same_day_as_date_only_to_is_valid(
+        self, client, admin_token, member_token, auth_headers, db_engine
+    ):
+        """TC-42-18 (B-42-2): `from > to` is checked against the end of the
+        date-only `to`, so this is 200, not 400."""
+        morning = datetime(2026, 11, 1, 10, tzinfo=UTC)
+        evening = datetime(2026, 11, 1, 18, tzinfo=UTC)
+        ids = self._add_late_returns(
+            client, admin_token, member_token, auth_headers, db_engine, morning, evening
+        )
+
+        found = self._found_ids(
+            client,
+            admin_token,
+            auth_headers,
+            **{"from": "2026-11-01T12:00:00Z", "to": "2026-11-01"},
+        )
+
+        assert found == {ids[evening]}
+
+    def test_from_after_to_returns_400(self, client, admin_token, auth_headers):
+        """TC-42-07."""
+        response = self._late_returns(
+            client,
+            admin_token,
+            auth_headers,
+            **{"from": "2026-11-02T00:00:00Z", "to": "2026-11-01T00:00:00Z"},
+        )
+
+        assert response.status_code == 400
+        assert response.json() == {
+            "code": "BAD_REQUEST",
+            "message": "'from' must be before 'to'",
+            "errors": None,
+        }
+
+    @pytest.mark.parametrize("param", ["from", "to"])
+    def test_invalid_datetime_returns_422(self, client, admin_token, auth_headers, param):
+        """TC-42-08 and Q-42-3."""
+        response = self._late_returns(client, admin_token, auth_headers, **{param: "not-a-date"})
+
+        assert response.status_code == 422
+        assert response.json()["code"] == "VALIDATION_ERROR"
+
+    @pytest.mark.parametrize("url", REPORT_URLS)
+    @pytest.mark.parametrize("query", ["page=0", "pageSize=0", "pageSize=101", "page=abc"])
+    def test_invalid_pagination_returns_422(self, client, admin_token, auth_headers, url, query):
+        """Q-42-5."""
+        response = client.get(f"{url}?{query}", headers=auth_headers(admin_token))
+
+        assert response.status_code == 422
+        assert response.json()["code"] == "VALIDATION_ERROR"
+
+    @pytest.mark.parametrize("url", REPORT_URLS)
+    def test_no_token_returns_401(self, client, url):
+        """TC-42-09."""
+        assert client.get(url).status_code == 401
+
+    @pytest.mark.parametrize("url", REPORT_URLS)
+    def test_member_token_returns_403(self, client, member_token, auth_headers, url):
+        """TC-42-10."""
+        assert client.get(url, headers=auth_headers(member_token)).status_code == 403
+
+    @pytest.mark.parametrize("url", REPORT_URLS)
+    def test_routes_are_not_shadowed_by_borrowing_id(self, client, admin_token, auth_headers, url):
+        """TC-42-12: an empty page, not a `/{borrowing_id}` 404/422."""
+        response = client.get(url, headers=auth_headers(admin_token))
+
+        assert response.status_code == 200
+        assert response.json() == {
+            "items": [],
+            "total": 0,
+            "page": 1,
+            "pageSize": 10,
+            "totalPages": 0,
+        }
+
+    def test_existing_overdue_endpoints_are_unchanged(
+        self, client, admin_token, member_token, auth_headers, db_engine
+    ):
+        """TC-42-13: still plain `BorrowingRead` rows, no report fields."""
+        book = create_book(client, admin_token, auth_headers)
+        member_id = self._member_id(client, member_token, auth_headers)
+        self._add_borrowing(
+            db_engine, member_id, book["id"], due_date=datetime.now(UTC) - timedelta(days=1)
+        )
+        headers = auth_headers(admin_token)
+
+        for url in ("/borrowings/overdue", "/borrowings?overdueOnly=true"):
+            response = client.get(url, headers=headers)
+            assert response.status_code == 200
+            [row] = response.json()["items"]
+            assert set(row) == {
+                "id",
+                "userId",
+                "bookId",
+                "borrowedAt",
+                "dueDate",
+                "returnedAt",
+                "renewedAt",
+                "status",
+            }
+
+    def test_openapi_declares_report_response_model(self, client):
+        """TC-42-14."""
+        paths = client.get("/openapi.json").json()["paths"]
+
+        for url in self.REPORT_URLS:
+            schema = paths[url]["get"]["responses"]["200"]["content"]["application/json"]["schema"]
+            assert schema["$ref"].endswith("Page_BorrowingReportRow_")

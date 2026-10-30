@@ -52,6 +52,18 @@ class BorrowingRepositoryInterface(CrudRepositoryInterface[BorrowingRead, Borrow
     ) -> tuple[list[BorrowingRead], int]: ...
 
     @abc.abstractmethod
+    def list_late_returns(
+        self,
+        offset: int,
+        limit: int,
+        returned_from: datetime | None = None,
+        returned_to: datetime | None = None,
+    ) -> tuple[list[BorrowingRead], int]:
+        """Loans returned after their due date, newest return first. Both
+        bounds are inclusive and expected UTC-aware; `None` = no bound."""
+        ...
+
+    @abc.abstractmethod
     def count_active_by_book(self, book_id: uuid.UUID) -> int: ...
 
     # The 2 write transitions a borrowing ever makes — named rather than a

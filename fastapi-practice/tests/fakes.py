@@ -250,6 +250,24 @@ class FakeBorrowingRepository(BorrowingRepositoryInterface):
         items.sort(key=lambda row: row.borrowed_at, reverse=True)
         return items[offset : offset + limit], len(items)
 
+    def list_late_returns(
+        self,
+        offset: int,
+        limit: int,
+        returned_from: datetime | None = None,
+        returned_to: datetime | None = None,
+    ) -> tuple[list[BorrowingRead], int]:
+        items = [
+            row
+            for row in self._rows.values()
+            if row.returned_at is not None
+            and row.returned_at > row.due_date
+            and (returned_from is None or row.returned_at >= returned_from)
+            and (returned_to is None or row.returned_at <= returned_to)
+        ]
+        items.sort(key=lambda row: row.returned_at or row.due_date, reverse=True)
+        return items[offset : offset + limit], len(items)
+
     def count_active_by_book(self, book_id: uuid.UUID) -> int:
         return sum(
             1 for row in self._rows.values() if row.book_id == book_id and row.returned_at is None
