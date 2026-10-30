@@ -10,7 +10,7 @@ from datetime import UTC, datetime
 # Third-party
 from sqlalchemy import case
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
-from sqlmodel import and_, func, select
+from sqlmodel import and_, col, func, select
 
 # Local application
 # core
@@ -101,6 +101,35 @@ class BorrowingRepository(BorrowingRepositoryInterface):
         total = self.backend.session.exec(count_stmt).one()
         items = self.backend.session.exec(
             list_stmt.order_by(Borrowing.borrowed_at.desc()).offset(offset).limit(limit)
+        ).all()
+        return [to_borrowing_read(item) for item in items], total
+
+    def list_late_returns(
+        self,
+        offset: int,
+        limit: int,
+        returned_from: datetime | None = None,
+        returned_to: datetime | None = None,
+    ) -> tuple[list[BorrowingRead], int]:
+        """SQLite stores naive datetimes and ignores any offset when
+        comparing, so callers must pass bounds already converted to UTC."""
+        # `col()`: `returned_at` is typed `datetime | None`, which mypy won't
+        # compare; at runtime it is the same column expression.
+        returned_at = col(Borrowing.returned_at)
+        count_stmt, list_stmt = apply_filters(
+            select(func.count()).select_from(Borrowing),
+            select(Borrowing),
+            [
+                returned_at.is_not(None),
+                returned_at > Borrowing.due_date,
+                returned_at >= returned_from if returned_from is not None else None,
+                returned_at <= returned_to if returned_to is not None else None,
+            ],
+        )
+
+        total = self.backend.session.exec(count_stmt).one()
+        items = self.backend.session.exec(
+            list_stmt.order_by(returned_at.desc()).offset(offset).limit(limit)
         ).all()
         return [to_borrowing_read(item) for item in items], total
 

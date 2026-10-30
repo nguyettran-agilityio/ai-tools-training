@@ -4,7 +4,13 @@ from datetime import UTC, datetime, timedelta
 
 # Local application
 # core
-from app.core.exceptions import AlreadyExistsError, ConflictError, ForbiddenError, NotFoundError
+from app.core.exceptions import (
+    AlreadyExistsError,
+    BadRequestError,
+    ConflictError,
+    ForbiddenError,
+    NotFoundError,
+)
 from app.core.mappers import pagination_offset, to_page
 from app.core.notifications import OVERDUE_REMINDER, Notification, Notifier
 from app.core.schemas import Page, PaginationParams
@@ -12,6 +18,7 @@ from app.core.service_utils import get_or_404
 
 # book
 from app.modules.book.repositories import BookRepositoryInterface
+from app.modules.book.schemas import BookRead
 
 # borrowing
 from app.modules.borrowing.repositories import (
@@ -20,6 +27,7 @@ from app.modules.borrowing.repositories import (
 )
 from app.modules.borrowing.schemas import (
     BorrowingRead,
+    BorrowingReportRow,
     BorrowOutcome,
     BorrowRequest,
     BorrowResult,
@@ -30,10 +38,22 @@ from app.modules.reservation.repositories import ReservationRepositoryInterface
 
 # user
 from app.modules.user.repositories import UserRepositoryInterface
+from app.modules.user.schemas import UserRead
 
 
 def _now_utc() -> datetime:
     return datetime.now(UTC)
+
+
+def _as_utc_bound(value: datetime | None) -> datetime | None:
+    """Naive = UTC; any other offset is converted. SQLite compares the stored
+    naive text and ignores the offset, so a `+07:00` bound must be shifted
+    here, not just tagged."""
+    if value is None:
+        return None
+    if value.tzinfo is None:
+        return value.replace(tzinfo=UTC)
+    return value.astimezone(UTC)
 
 
 class BorrowingService:
@@ -134,6 +154,63 @@ class BorrowingService:
             offset, pagination.page_size, overdue_only, now
         )
         return to_page(items, total, pagination.page, pagination.page_size)
+
+    def report_overdue(self, pagination: PaginationParams) -> Page[BorrowingReportRow]:
+        """Admin report: unreturned, past-due loans, newest borrow first
+        (`list_all`'s order), each with the member's email and book title."""
+        offset = pagination_offset(pagination.page, pagination.page_size)
+        items, total = self.borrowing_repository.list_all(
+            offset, pagination.page_size, overdue_only=True, now=_now_utc()
+        )
+        return to_page(self._to_report_rows(items), total, pagination.page, pagination.page_size)
+
+    def report_late_returns(
+        self,
+        pagination: PaginationParams,
+        returned_from: datetime | None = None,
+        returned_to: datetime | None = None,
+    ) -> Page[BorrowingReportRow]:
+        """Admin report: loans returned after their due date, newest return
+        first, optionally within an inclusive `returned_at` range."""
+        returned_from = _as_utc_bound(returned_from)
+        returned_to = _as_utc_bound(returned_to)
+        if returned_from is not None and returned_to is not None and returned_from > returned_to:
+            raise BadRequestError("'from' must be before 'to'")
+
+        offset = pagination_offset(pagination.page, pagination.page_size)
+        items, total = self.borrowing_repository.list_late_returns(
+            offset, pagination.page_size, returned_from, returned_to
+        )
+        return to_page(self._to_report_rows(items), total, pagination.page, pagination.page_size)
+
+    def _to_report_rows(self, items: list[BorrowingRead]) -> list[BorrowingReportRow]:
+        """Enrich one page of borrowings, looking up each distinct user and
+        book once (per-page cache). `notify_overdue` deliberately keeps its
+        own per-row lookups."""
+        users: dict[uuid.UUID, UserRead] = {}
+        books: dict[uuid.UUID, BookRead] = {}
+        rows = []
+        for borrowing in items:
+            if borrowing.user_id not in users:
+                user = self.user_repository.get_by_id(borrowing.user_id)
+                if user is None:
+                    # Borrowings cascade on user delete, so this is a broken
+                    # invariant, not a normal "not found".
+                    raise LookupError(f"Borrowing {borrowing.id} references a missing user")
+                users[borrowing.user_id] = user
+            if borrowing.book_id not in books:
+                book = self.book_repository.get_by_id(borrowing.book_id)
+                if book is None:
+                    raise LookupError(f"Borrowing {borrowing.id} references a missing book")
+                books[borrowing.book_id] = book
+            rows.append(
+                BorrowingReportRow(
+                    **borrowing.model_dump(exclude={"status"}),
+                    user_email=users[borrowing.user_id].email,
+                    book_title=books[borrowing.book_id].title,
+                )
+            )
+        return rows
 
     def return_book(self, user_id: uuid.UUID, borrowing_id: uuid.UUID) -> BorrowingRead:
         """Mark a borrowing returned and give the copy back to the book's

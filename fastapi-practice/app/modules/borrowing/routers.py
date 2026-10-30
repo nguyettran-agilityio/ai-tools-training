@@ -1,5 +1,6 @@
 # Standard library
 import uuid
+from datetime import datetime
 
 # Third-party
 from fastapi import APIRouter, BackgroundTasks, Depends, Query, status
@@ -19,9 +20,11 @@ from app.core.schemas import Page, PaginationParams
 # borrowing
 from app.modules.borrowing.schemas import (
     BorrowingRead,
+    BorrowingReportRow,
     BorrowOutcome,
     BorrowRequest,
     OverdueNotifyResult,
+    ReportUpperBound,
 )
 from app.modules.borrowing.services import BorrowingService
 
@@ -62,6 +65,27 @@ def overdue(
     service: BorrowingService = Depends(get_borrowing_service),
 ) -> Page[BorrowingRead]:
     return service.list_all(pagination, overdue_only=True)
+
+
+@router.get("/reports/overdue", response_model=Page[BorrowingReportRow])
+def report_overdue(
+    pagination: PaginationParams = Depends(PaginationParams),
+    _current_user: UserRead = Depends(require_admin),
+    service: BorrowingService = Depends(get_borrowing_service),
+) -> Page[BorrowingReportRow]:
+    return service.report_overdue(pagination)
+
+
+@router.get("/reports/late-returns", response_model=Page[BorrowingReportRow])
+def report_late_returns(
+    # `from` is a Python keyword, hence the alias.
+    returned_from: datetime | None = Query(default=None, alias="from"),
+    returned_to: ReportUpperBound | None = Query(default=None, alias="to"),
+    pagination: PaginationParams = Depends(PaginationParams),
+    _current_user: UserRead = Depends(require_admin),
+    service: BorrowingService = Depends(get_borrowing_service),
+) -> Page[BorrowingReportRow]:
+    return service.report_late_returns(pagination, returned_from, returned_to)
 
 
 @router.get("", response_model=Page[BorrowingRead])

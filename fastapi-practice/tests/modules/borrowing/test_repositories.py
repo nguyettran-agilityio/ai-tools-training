@@ -189,6 +189,116 @@ class TestBorrowingRepository:
         assert reloaded.renewed_at == now
 
 
+class TestListLateReturns:
+    """`list_late_returns` against real SQLite: lateness filter, inclusive
+    bounds, `returned_at` desc order (TC-42-03 / 04 / 06)."""
+
+    def _make_repo(self, session: Session) -> BorrowingRepository:
+        return BorrowingRepository(SQLModelBackend(session, Borrowing, to_borrowing_read))
+
+    def _late_return(self, session: Session, returned_at: datetime) -> Borrowing:
+        user = make_user(session)
+        book = make_book(session, category_id=make_category(session).id)
+        due_date = returned_at - timedelta(days=1)
+        return make_borrowing(
+            session,
+            user.id,
+            book.id,
+            borrowed_at=due_date - timedelta(days=14),
+            due_date=due_date,
+            returned_at=returned_at,
+        )
+
+    def test_only_returns_after_due_date_newest_return_first(self, session):
+        user = make_user(session)
+        book = make_book(session, category_id=make_category(session).id)
+        due_date = datetime(2026, 11, 1, 12, tzinfo=UTC)
+        borrowed_at = due_date - timedelta(days=14)
+        early = make_borrowing(
+            session,
+            user.id,
+            book.id,
+            borrowed_at=borrowed_at,
+            due_date=due_date,
+            returned_at=due_date - timedelta(hours=1),
+        )
+        exactly_at_due = make_borrowing(
+            session,
+            user.id,
+            book.id,
+            borrowed_at=borrowed_at,
+            due_date=due_date,
+            returned_at=due_date,
+        )
+        one_second_late = make_borrowing(
+            session,
+            user.id,
+            book.id,
+            borrowed_at=borrowed_at,
+            due_date=due_date,
+            returned_at=due_date + timedelta(seconds=1),
+        )
+        days_late = make_borrowing(
+            session,
+            user.id,
+            book.id,
+            borrowed_at=borrowed_at,
+            due_date=due_date,
+            returned_at=due_date + timedelta(days=3),
+        )
+        make_borrowing(session, user.id, book.id)  # unreturned
+
+        items, total = self._make_repo(session).list_late_returns(0, 10)
+
+        assert total == 2
+        assert [item.id for item in items] == [days_late.id, one_second_late.id]
+        assert early.id not in {item.id for item in items}
+        assert exactly_at_due.id not in {item.id for item in items}
+
+    def test_both_bounds_are_inclusive(self, session):
+        t1 = datetime(2026, 11, 1, 8, tzinfo=UTC)
+        t2 = datetime(2026, 11, 2, 8, tzinfo=UTC)
+        t3 = datetime(2026, 11, 3, 8, tzinfo=UTC)
+        first, second, third = (self._late_return(session, t) for t in (t1, t2, t3))
+        repo = self._make_repo(session)
+
+        items, total = repo.list_late_returns(0, 10, returned_from=t1, returned_to=t3)
+        assert total == 3
+        assert [item.id for item in items] == [third.id, second.id, first.id]
+
+        items, total = repo.list_late_returns(0, 10, returned_from=t2, returned_to=t2)
+        assert total == 1
+        assert [item.id for item in items] == [second.id]
+
+    def test_single_bound_applies_only_that_bound(self, session):
+        before = self._late_return(session, datetime(2026, 11, 1, tzinfo=UTC))
+        at = self._late_return(session, datetime(2026, 11, 2, tzinfo=UTC))
+        after = self._late_return(session, datetime(2026, 11, 3, tzinfo=UTC))
+        t = datetime(2026, 11, 2, tzinfo=UTC)
+        repo = self._make_repo(session)
+
+        items, _ = repo.list_late_returns(0, 10, returned_from=t)
+        assert {item.id for item in items} == {at.id, after.id}
+
+        items, _ = repo.list_late_returns(0, 10, returned_to=t)
+        assert {item.id for item in items} == {before.id, at.id}
+
+    def test_paginates_and_returns_utc_aware_datetimes(self, session):
+        for day in (1, 2, 3):
+            self._late_return(session, datetime(2026, 11, day, tzinfo=UTC))
+        repo = self._make_repo(session)
+
+        page1, total = repo.list_late_returns(0, 2)
+        page2, _ = repo.list_late_returns(2, 2)
+
+        assert total == 3
+        assert len(page1) == 2
+        assert len(page2) == 1
+        assert {item.id for item in page1}.isdisjoint({item.id for item in page2})
+        assert page1[0].returned_at is not None
+        assert page1[0].returned_at.tzinfo is UTC
+
+
 class TestBorrowingBanRepository:
     NOW = datetime(2026, 11, 1, 10, 0, tzinfo=UTC)
 
