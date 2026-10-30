@@ -81,6 +81,10 @@ Conventions:
 | TC-42-12 | #42 | Routes not shadowed by `/{borrowing_id}` | Admin token | 1. Call both report URLs. | Report response (200 page), not a borrowing-by-id 404/422. | API | Medium |
 | TC-42-13 | #42 | Existing overdue endpoints unchanged | Overdue loans exist | 1. `GET /borrowings/overdue`.<br>2. `GET /borrowings?overdueOnly=true`. | Same status, shape and content as before this feature (regression). | API | Medium |
 | TC-42-14 | #42 | No envelope; `response_model` declared | — | 1. Inspect report response body.<br>2. Inspect OpenAPI for both routes. | Body is the page object directly; OpenAPI shows the response schema. | API | Low |
+| TC-42-15 | #42 (B-42-2) | Date-only `to` covers the whole UTC day | Late returns at `2026-11-01T00:00:00Z`, `2026-11-01T23:59:59.999999Z`, `2026-11-02T00:00:00Z` | 1. Call with `to=2026-11-01`. | The two Nov 1 returns are included; `2026-11-02T00:00:00Z` is excluded. | API / unit | High |
+| TC-42-16 | #42 (B-42-2) | `to` with a time part keeps its literal meaning | Late returns at `2026-11-01T00:00:00Z` and `2026-11-01T10:00:00Z` | 1. Call with `to=2026-11-01T00:00:00Z`.<br>2. Call with `to=2026-11-01T00:00:00` (no tz). | Both calls: only the `00:00:00Z` return is included. | API / unit | Medium |
+| TC-42-17 | #42 (B-42-2) | Date-only `from` and `to` on the same day | Late returns at `2026-10-31T23:59:59Z`, `2026-11-01T12:00:00Z`, `2026-11-02T00:00:00Z` | 1. Call with `from=2026-11-01&to=2026-11-01`. | Only the `2026-11-01T12:00:00Z` return is included. | API | Medium |
+| TC-42-18 | #42 (B-42-2) | `from` later on the same day as a date-only `to` is not `from > to` | Late returns at `2026-11-01T10:00:00Z` and `2026-11-01T18:00:00Z` | 1. Call with `from=2026-11-01T12:00:00Z&to=2026-11-01`. | 200 (not 400 `BAD_REQUEST`); only the `18:00:00Z` return is included. | API | Medium |
 
 ## #43 — T4 Admin report: banned members
 
