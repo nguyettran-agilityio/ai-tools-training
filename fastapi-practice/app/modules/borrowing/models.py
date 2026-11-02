@@ -37,7 +37,7 @@ class BorrowingBan(SQLModel, table=True):
     # `CASCADE`: deleting a book cascades to its borrowings, but the ban
     # itself must survive.
     source_borrowing_id: uuid.UUID | None = Field(
-        default=None, foreign_key="borrowing.id", ondelete="SET NULL"
+        default=None, foreign_key="borrowing.id", ondelete="SET NULL", index=True
     )
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
