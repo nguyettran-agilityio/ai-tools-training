@@ -39,6 +39,7 @@ Conventions:
 | TC-40-16 | #40 | User deletion cascades to the ban | M has a ban row; M can be deleted | 1. Delete M.<br>2. Inspect `borrowing_ban`. | M's ban row is gone. | DB | Medium |
 | TC-40-17 | #40 | Source borrowing deletion nulls the reference | Ban row with `source_borrowing_id = L` | 1. Delete borrowing L (DB).<br>2. Inspect ban row. | Row remains; `source_borrowing_id IS NULL`. | DB | Low |
 | TC-40-18 | #40 | Datetimes are UTC-aware on read | SQLite backend (stores naive datetimes) | 1. Create a ban.<br>2. Read it through the repository. | `banned_until`, `created_at`, `updated_at` are timezone-aware UTC. | unit (repository) | Medium |
+| TC-40-19 | #40 | `late_return_ban_days` is capped at 36500 | — | 1. Load settings with `LATE_RETURN_BAN_DAYS=36500`.<br>2. Load settings with `LATE_RETURN_BAN_DAYS=36501`. | 1: loads, value is 36500.<br>2: `ValidationError` at load time (a larger value could overflow `returned_at + N` past `datetime.max`). | unit: `tests/core/test_config.py::test_late_return_ban_days_upper_bound_is_accepted`, `::test_late_return_ban_days_above_upper_bound_is_rejected` | Medium |
 
 ## #41 — T2 Refuse borrowing for banned members / overdue holders
 
@@ -85,6 +86,7 @@ Conventions:
 | TC-42-16 | #42 (B-42-2) | `to` with a time part keeps its literal meaning | Late returns at `2026-11-01T00:00:00Z` and `2026-11-01T10:00:00Z` | 1. Call with `to=2026-11-01T00:00:00Z`.<br>2. Call with `to=2026-11-01T00:00:00` (no tz). | Both calls: only the `00:00:00Z` return is included. | API / unit | Medium |
 | TC-42-17 | #42 (B-42-2) | Date-only `from` and `to` on the same day | Late returns at `2026-10-31T23:59:59Z`, `2026-11-01T12:00:00Z`, `2026-11-02T00:00:00Z` | 1. Call with `from=2026-11-01&to=2026-11-01`. | Only the `2026-11-01T12:00:00Z` return is included. | API | Medium |
 | TC-42-18 | #42 (B-42-2) | `from` later on the same day as a date-only `to` is not `from > to` | Late returns at `2026-11-01T10:00:00Z` and `2026-11-01T18:00:00Z` | 1. Call with `from=2026-11-01T12:00:00Z&to=2026-11-01`. | 200 (not 400 `BAD_REQUEST`); only the `18:00:00Z` return is included. | API | Medium |
+| TC-42-19 | #42 | Ties on the sort key are broken by `id` desc | 4 overdue loans with the same `borrowed_at`; 4 late returns with the same `returned_at` | 1. Read the overdue list in 2 pages of 2.<br>2. Read the late-returns list in 2 pages of 2. | Both: `total == 4`; the two pages together list all 4 rows once, ordered `id` descending (stable pagination). | unit (repository): `tests/modules/borrowing/test_repositories.py::TestBorrowingRepository::test_list_all_overdue_ties_on_borrowed_at_are_ordered_by_id`, `::TestListLateReturns::test_ties_on_returned_at_are_ordered_by_id` | Medium |
 
 ## #43 — T4 Admin report: banned members
 

@@ -59,7 +59,7 @@ Reservations are not affected, including the existing auto-reserve on an out-of-
 - FR-4.4 The same applies to a member blocked by FR-2 (holding an overdue loan). *Resolved by Lead (C-20): confirmed.*
 
 ### FR-5 Overdue report (admin)
-- FR-5.1 Currently overdue, unreturned loans, ordered newest borrow first (`borrowedAt` descending). *Resolved by Lead: matches the existing `list_all` order reused by `report_overdue`.*
+- FR-5.1 Currently overdue, unreturned loans, ordered newest borrow first (`borrowedAt` descending, ties broken by `id` descending so pages are stable). *Resolved by Lead: matches the existing `list_all` order reused by `report_overdue`.*
 - FR-5.2 Late returns, filterable by a `from`/`to` range on `returned_at`, paginated, newest first.
 - FR-5.3 Currently banned members, with `bannedUntil`, paginated, soonest-ending first.
 - FR-5.4 All report endpoints are admin-only (`require_admin`). *Resolved by Lead (OQ-3): librarian = admin.*
@@ -169,7 +169,7 @@ def list_late_returns(
 ) -> tuple[list[BorrowingRead], int]: ...
 ```
 
-- `list_late_returns` filters `returned_at IS NOT NULL AND returned_at > due_date`, plus optional range on `returned_at`, built with the existing `apply_filters` helper; ordered `returned_at DESC`.
+- `list_late_returns` filters `returned_at IS NOT NULL AND returned_at > due_date`, plus optional range on `returned_at`, built with the existing `apply_filters` helper; ordered `returned_at DESC, id DESC` (the `id` tie-break keeps pages stable when several loans share a `returned_at`).
 - `deps.py` gets `get_borrowing_ban_repository` constructing `SQLModelBackend[BorrowingBan, BorrowingBanRead, BorrowingBanUpdateFields]` — the only place in the app that constructs a backend.
 - `tests/fakes.py` gets `FakeBorrowingBanRepository` and the two new `FakeBorrowingRepository` methods.
 
