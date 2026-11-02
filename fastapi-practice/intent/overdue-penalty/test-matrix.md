@@ -27,9 +27,9 @@ Conventions:
 | TC-40-04 | #40 | Return before due date → no ban | M has a loan with `D` in the future | 1. `POST /borrowings/{id}/return`. | 200; no `borrowing_ban` row created or changed for M. | API + DB | High |
 | TC-40-05 | #40 | Return exactly at `D` is on time | Frozen clock at `D` | 1. Return the loan at exactly `D`. | No ban created or changed. | unit | High |
 | TC-40-06 | #40 | Return 1 second late creates a ban | Frozen clock at `D + 1s`; M has no ban | 1. Return the loan. | One `borrowing_ban` row for M: `banned_until = returned_at + N×24h` (UTC), `source_borrowing_id = loan id`. | unit + DB | High |
-| TC-40-07 | #40 | Existing longer ban is not shortened | M banned until `T2`; late return where `returned_at + N < T2` | 1. Return the other loan late. | `banned_until` stays `T2`. | unit / DB | High |
+| TC-40-07 | #40 | Existing longer ban is not shortened | M banned until `T2`; late return where `returned_at + N < T2` | 1. Return the other loan late. | `banned_until` stays `T2`; `source_borrowing_id` and `updated_at` are unchanged (B-40-1). | unit / DB | High |
 | TC-40-08 | #40 | Existing shorter ban is extended, not stacked | M banned until `T1`; late return where `returned_at + N > T1` | 1. Return the other loan late. | `banned_until = returned_at + N` (not `T1 + N`). | unit / DB | High |
-| TC-40-09 | #40 | Expired ban row is reused | M has a ban row with `banned_until` in the past | 1. M returns another loan late.<br>2. Count `borrowing_ban` rows for M. | Exactly one row for M, with the new `banned_until`. | DB | Medium |
+| TC-40-09 | #40 | Expired ban row is reused | M has a ban row with `banned_until` in the past | 1. M returns another loan late.<br>2. Count `borrowing_ban` rows for M. | Exactly one row for M, with the new `banned_until`; `updated_at` is the new return time and `created_at` is kept (B-40-1). | DB | Medium |
 | TC-40-10 | #40 | Concurrent late returns keep the later end date | M has two late loans | 1. Return both at the same time (concurrent requests or concurrent repository `extend` calls). | One row; `banned_until` = the later of the two end dates. | unit (repository) | Medium |
 | TC-40-11 | #40 | No backfill for pre-deployment late returns | Late returns exist in DB before the migration | 1. Apply migration.<br>2. Inspect `borrowing_ban`. | No ban rows caused by those returns. | DB | Medium |
 | TC-40-12 | #40 | Late return response and copy count unchanged | M has a late loan for book B | 1. Record `availableCopies` of B.<br>2. `POST /borrowings/{id}/return`. | Response is `BorrowingRead` with no ban field; B's `availableCopies` increased by 1. | API | High |
@@ -72,7 +72,7 @@ Conventions:
 | TC-42-03 | #42 | Late-returns content and order | Loans returned: before `D`, exactly at `D`, after `D` (several) | 1. Admin `GET /borrowings/reports/late-returns`. | Only `returned_at > due_date`; exactly-at-`D` excluded; ordered `returnedAt` desc; paginated; `userEmail` and `bookTitle` present. | API (+ unit for exact-`D`) | High |
 | TC-42-04 | #42 | Inclusive `from` / `to` bounds | Late returns at `t1 < t2 < t3` | 1. Call with `from=t1&to=t3`.<br>2. Call with `from=t2&to=t2`. | 1: all three. 2: only `t2`. | API / unit | High |
 | TC-42-05 | #42 | Naive datetime treated as UTC | Late return at `2026-11-01T00:00:00Z` | 1. Call with `from=2026-11-01T00:00:00` (no tz). | The loan is included (interpreted as UTC). | API / unit | Medium |
-| TC-42-06 | #42 | Single bound | Late returns before and after `t` | 1. Call with only `from=t`.<br>2. Call with only `to=t`. | 1: only `returnedAt >= t`. 2: only `returnedAt <= t`. | API | Medium |
+| TC-42-06 | #42 | Single bound | Late returns before and after `t` | 1. Call with only `from=t`.<br>2. Call with only `to=t`. | 1: only `returnedAt >= t`. 2: only `returnedAt <= t`. Here `t` has a time part; a date-only `to` covers that whole UTC day (B-42-2, see TC-42-15). | API | Medium |
 | TC-42-07 | #42 | `from > to` | — | 1. Call with `from` later than `to`. | 400; `code: "BAD_REQUEST"`, `message: "'from' must be before 'to'"`. | API | High |
 | TC-42-08 | #42 | Invalid datetime | — | 1. Call with `from=not-a-date`. | 422 from the existing validation handler. | API | Medium |
 | TC-42-09 | #42 | No token | — | 1. Call both endpoints without a token. | 401 for both. | API | High |
@@ -118,7 +118,7 @@ Conventions:
 
 - **Q-40-1** — With `late_return_ban_days = 0`, the AC only says "no active ban results". Should a `borrowing_ban` row be created or updated (with `banned_until = returned_at`), or should no row be written at all? A DB-level check cannot be written until this is decided.
 - **Q-40-2** — When a late return does **not** extend the ban (`returned_at + N < T2`), does `source_borrowing_id` stay the old loan or change to the new one? And what if `returned_at + N == T2` exactly? This also decides `sourceBookTitle` in #43.
-- **Q-40-3** — When an expired ban row is reused, should `created_at` be kept or reset? The AC defines `banned_until` only.
+- **Q-40-3** — ~~When an expired ban row is reused, should `created_at` be kept or reset? The AC defines `banned_until` only.~~ *Superseded by B-40-1 (spec §10.1).*
 - **Q-40-4** — "Given a loan that has already been returned, the existing error behaviour is unchanged." The ticket does not state what that behaviour is (status code and `code`). QA needs the expected status and body to write TC-40-15 without reading code.
 - **Q-40-5** — The 403 for returning someone else's loan: what is the error body `code`? Does an **admin** returning a member's loan also get 403? Non-scope says admins cannot return on a member's behalf, but no AC covers it.
 - **Q-40-6** — "Two late returns by the same member at the same time" cannot be reproduced reliably as a black-box API test. Is a repository-level concurrency test enough to accept this AC, or does QA need an API-level test?

@@ -1,7 +1,7 @@
 # Plan — #40 Ban a member from borrowing after a late return
 
 Source: [#40](https://github.com/nguyettran-agilityio/ai-tools-training/issues/40) and its comments, [spec.md](spec.md), [test-matrix.md](test-matrix.md).
-Status: approved plan, implemented on `feat/ban-on-late-return`. Migration `2445c20e0ab5` is generated and applied to the local SQLite database. Nothing is committed yet.
+Status: approved plan, implemented on `feat/ban-on-late-return`. Migration `2445c20e0ab5` is generated and applied to the local SQLite database. Committed as `e4d02c2` and merged into `dev` in #48.
 
 Decisions this plan relies on:
 
