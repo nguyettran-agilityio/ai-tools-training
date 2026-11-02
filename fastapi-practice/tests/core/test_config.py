@@ -105,3 +105,26 @@ def test_negative_late_return_ban_days_is_rejected(monkeypatch):
         get_settings()
 
     get_settings.cache_clear()
+
+
+def test_late_return_ban_days_upper_bound_is_accepted(monkeypatch):
+    """`late_return_ban_days` may be at most 36500; the bound itself loads."""
+    monkeypatch.setenv("JWT_SECRET_KEY", "test-secret-key-with-at-least-32-characters")
+    monkeypatch.setenv("LATE_RETURN_BAN_DAYS", "36500")
+    get_settings.cache_clear()
+
+    assert get_settings().late_return_ban_days == 36500
+
+    get_settings.cache_clear()
+
+
+def test_late_return_ban_days_above_upper_bound_is_rejected(monkeypatch):
+    """`36501` is above the 36500 bound and fails at load time."""
+    monkeypatch.setenv("JWT_SECRET_KEY", "test-secret-key-with-at-least-32-characters")
+    monkeypatch.setenv("LATE_RETURN_BAN_DAYS", "36501")
+    get_settings.cache_clear()
+
+    with pytest.raises(ValidationError):
+        get_settings()
+
+    get_settings.cache_clear()

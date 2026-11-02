@@ -35,7 +35,7 @@ class Settings(BaseSettings):
     renewal_days: int = 14
     # `0` turns the ban off in practice: `banned_until == returned_at` is
     # never active, since active means `banned_until > now`.
-    late_return_ban_days: int = Field(default=7, ge=0)
+    late_return_ban_days: int = Field(default=7, ge=0, le=36500)
 
     # Rate limiting — in-memory, per-process (see app/core/rate_limiter.py).
     # Guards /auth/login and /auth/register against brute-force/spam.
