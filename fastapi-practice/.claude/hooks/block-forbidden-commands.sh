@@ -120,10 +120,12 @@ check_simple_command() {
   local depth=$1
   shift
   local t=("$@")
-  local i=0 j n=${#t[@]} found
+  local i=0 j n=${#t[@]} found w
   while [ "$i" -lt "$n" ]; do
     case "${t[$i]}" in
       [A-Za-z_]*=*) i=$((i + 1)) ;;
+      # Reserved words that start a command: `then cmd`, `do cmd`, `{ cmd`, `! cmd`.
+      if | then | else | elif | while | until | do | '{' | '!') i=$((i + 1)) ;;
       env | */env)
         i=$((i + 1))
         while [ "$i" -lt "$n" ]; do
@@ -135,20 +137,32 @@ check_simple_command() {
         done
         ;;
       exec | command | nohup | time | sudo)
+        w=${t[$i]}
         i=$((i + 1))
         while [ "$i" -lt "$n" ]; do
           case "${t[$i]}" in
+            -u | -g | -U | -C | -D | -p | -r | -t | -T | --user | --group | \
+              --other-user | --close-from | --chdir | --prompt | --role | --type | \
+              --command-timeout)
+              # sudo options that take a value: `sudo -u root cmd`.
+              if [ "$w" = sudo ]; then i=$((i + 2)); else i=$((i + 1)); fi
+              ;;
             -*) i=$((i + 1)) ;;
             *) break ;;
           esac
         done
         ;;
-      uv | */uv)
-        [ "${t[$((i + 1))]:-}" = run ] || return 0
-        i=$((i + 2))
+      uv | */uv | uvx | */uvx)
+        # uv run / uv tool run / uvx, then their options.
+        case "${t[$i]} ${t[$((i + 1))]:-} ${t[$((i + 2))]:-}" in
+          uvx\ * | */uvx\ *) i=$((i + 1)) ;;
+          *\ run\ *) i=$((i + 2)) ;;
+          *\ tool\ run) i=$((i + 3)) ;;
+          *) return 0 ;;
+        esac
         while [ "$i" -lt "$n" ]; do
           case "${t[$i]}" in
-            --with | --with-editable | --with-requirements | --python | -p | \
+            --from | --with | --with-editable | --with-requirements | --python | -p | \
               --project | --directory | --package | --env-file | --extra | \
               --group | --only-group | --no-group | --index | --default-index)
               i=$((i + 2))

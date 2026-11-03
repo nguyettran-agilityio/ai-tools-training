@@ -72,6 +72,13 @@ run_case block 'echo "$(uv run alembic upgrade head)"'
 run_case block 'env DATABASE_URL=sqlite:///x.db uv run alembic upgrade head'
 run_case allow 'uv run alembic revision --autogenerate -m "upgrade users"'
 run_case block 'uv run alembic current' "" "$work/nojq" "install jq"
+run_case block '{ uv run alembic upgrade head; }'
+run_case block 'if true; then uv run alembic upgrade head; fi'
+run_case block 'for i in 1; do uv run alembic upgrade head; done'
+run_case block '! uv run alembic upgrade head'
+run_case block 'uvx alembic upgrade head'
+run_case block 'uv tool run alembic upgrade head'
+run_case block 'sudo -u root alembic upgrade head'
 
 echo
 echo "$pass passed, $fail failed"
