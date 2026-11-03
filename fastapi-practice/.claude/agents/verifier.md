@@ -1,6 +1,6 @@
 ---
 name: verifier
-description: Smoke-tests a change against a real running server on a copy of library.db, then reports a step / expected / actual table. Use once a change is ready to check end to end, before or alongside pr-reviewer.
+description: "Use proactively when the user wants to verify a change, smoke-test it, or check a flow end to end on a real running server, even if they do not name this agent. Runs the app on a copy of library.db, calls the real API, and reports a step / expected / actual table without changing anything."
 tools: Read, Grep, Glob, Bash
 model: inherit
 ---
