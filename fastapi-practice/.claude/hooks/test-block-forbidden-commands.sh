@@ -79,6 +79,9 @@ run_case block '! uv run alembic upgrade head'
 run_case block 'uvx alembic upgrade head'
 run_case block 'uv tool run alembic upgrade head'
 run_case block 'sudo -u root alembic upgrade head'
+run_case block 'if uv run alembic upgrade head; then echo ok; fi'
+run_case block 'while uv run alembic upgrade head; do break; done'
+run_case block 'sudo -g staff alembic upgrade head'
 
 echo
 echo "$pass passed, $fail failed"
