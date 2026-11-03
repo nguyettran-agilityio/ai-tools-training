@@ -8,9 +8,9 @@ Library management API (FastAPI, SQLModel, SQLite). When extending a module, mat
 uv sync
 uv run alembic upgrade head   # human-run only, see Migrations
 uv run fastapi dev
-uv run pytest
-uv run ruff check . && uv run ruff format <changed .py files>
-uv run mypy                   # app/ and tests/
+uv run pytest                 # ok: "N passed"
+uv run ruff check . && uv run ruff format <changed .py files>   # ok: "All checks passed!"
+uv run mypy                   # app/ and tests/; ok: "Success: no issues found in N source files"
 uv run pre-commit run --all-files
 ```
 
@@ -34,10 +34,11 @@ uv run pre-commit run --all-files
 
 ## Testing
 
-- `tests/` mirrors `app/`. Every test directory needs an `__init__.py`, or same-named test files collide.
-- Tests build their own in-memory SQLite engine with `create_all()`. This is intended and separate from migrations.
+- `tests/` mirrors `app/`. Every test directory needs an `__init__.py`, or same-named test files collide. Tests build their own in-memory SQLite engine with `create_all()`. This is intended and separate from migrations.
 - The `client` fixture (`tests/conftest.py`) bypasses `rate_limit_auth`. `tests/modules/user/test_auth_rate_limit.py` re-enables it.
 - Use the `member_token` / `admin_token` fixtures for auth. Service unit tests use the fake repositories in `tests/fakes.py`, with no DB.
+- Before reporting a task done, run `uv run pytest`, `uv run ruff check .` and `uv run mypy`, and paste the summary line of each (see Commands).
+- When fixing a bug, add a regression test. Never edit or delete an existing test. If one looks wrong, stop and ask the user.
 
 ## Rules (MANDATORY)
 
@@ -62,8 +63,7 @@ uv run pre-commit run --all-files
 ## Business rules
 
 - Roles: anonymous, member, admin.
-- Book: `availableCopies` is the single source of truth. `status` is computed in the response, never stored.
-- A member borrows at most 5 books (`Settings.borrow_limit`). Loans last 14 days (`Settings.loan_duration_days`).
+- Book: `availableCopies` is the single source of truth. `status` is computed in the response, never stored. A member borrows at most 5 books (`Settings.borrow_limit`). Loans last 14 days (`Settings.loan_duration_days`).
 - Overdue is computed on read. There is no background job. Admins send reminders via `POST /borrowings/notify-overdue`.
 - A return after `due_date` records a ban for `Settings.late_return_ban_days` (default 7, `0` = off; bans never stack, the later end date wins). `borrow()` does not enforce it yet (see #41).
 - Reservations are a FIFO queue by `createdAt`. On return, notify every pending member, not just the head (WebSocket + email via `CompositeNotifier`). A reservation is fulfilled only when its owner borrows the book.
