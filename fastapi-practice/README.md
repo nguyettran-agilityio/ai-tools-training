@@ -55,7 +55,7 @@ and reservations.
 `__init__.py` files are omitted below for readability.
 
 ```
-fastapi/practice/
+fastapi-practice/
 ├── app/
 │   ├── main.py                      # FastAPI app factory + GET /health
 │   ├── cli/
@@ -123,8 +123,7 @@ fastapi/practice/
 ├── alembic.ini
 ├── .env.example
 ├── pyproject.toml
-├── uv.lock
-└── .pre-commit-config.yaml
+└── uv.lock
 ```
 
 Cross-cutting infrastructure lives in `app/core/`; every domain module
@@ -321,7 +320,7 @@ an admin to trigger it.)
 3. Navigate to the project folder:
 
    ```bash
-   cd fastapi/practice
+   cd fastapi-practice
    ```
 
 4. Install [uv](https://docs.astral.sh/uv/) if you don't have it yet.
@@ -346,6 +345,12 @@ an admin to trigger it.)
 
    ```bash
    uv run alembic upgrade head
+   ```
+
+8. Install the pre-commit git hook (one-time; see "Pre-commit" below):
+
+   ```bash
+   uv run pre-commit install
    ```
 
 ## Database Migrations
@@ -428,7 +433,8 @@ uv run pre-commit install          # one-time: install the git hook
 uv run pre-commit run --all-files  # run all hooks against the whole project
 ```
 
-`.pre-commit-config.yaml` (scoped to `fastapi/practice/`) runs `ruff-check
+`.pre-commit-config.yaml` lives at the git root (one level up) and is scoped to
+`fastapi-practice/`; ruff still reads this folder's `pyproject.toml`. It runs `ruff-check
 --fix` and `ruff-format`, plus the standard `pre-commit-hooks`: trailing
 whitespace, end-of-file-fixer, YAML validity, merge-conflict markers, debug
 statements, and large-file checks.
