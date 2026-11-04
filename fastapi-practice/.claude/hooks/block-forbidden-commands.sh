@@ -1,12 +1,15 @@
 #!/usr/bin/env bash
 # PreToolUse hook (Bash): block commands the team forbids Claude from running.
-#   - alembic upgrade, only when alembic is the command being run: first word,
-#     or after VAR=..., env, uv run, python -m. Text inside a string
-#     (commit message, echo) does not count.
+#   - alembic upgrade, when alembic is run as a command word: first word, or
+#     after VAR=..., reserved words (then, do, {, !), env, exec/command/nohup/
+#     time/sudo, uv run / uv tool run / uvx, python -m, or any unknown word
+#     (timeout 60, poetry run). Text inside a string (commit message, echo)
+#     does not count.
 #   - git push to dev or main (explicit refspec, HEAD while on dev/main,
 #     bare `git push` while on dev/main, --all, --mirror)
 # Scripts given to bash -c / sh -c / eval, and "$(...)" or `...` inside double
-# quotes, are checked too.
+# quotes, are checked too. A quote, $( or backtick that is never closed blocks,
+# since the rest of the command can't be checked.
 # Blocks by exiting 2 with the reason on stderr; Claude sees the reason.
 set -u
 
@@ -114,8 +117,9 @@ check_git_push() {
 }
 
 # Args: depth, then the tokens of one simple command (quotes already removed).
-# Skips VAR=... / env / uv run / python -m wrappers to find the command that
-# actually runs, then checks it.
+# Skips VAR=..., reserved words, known wrappers (env, sudo, uv run, python -m...)
+# and any unknown word until it reaches alembic, git, a shell -c or eval, then
+# checks that. Fails closed: an unknown word never ends the search.
 check_simple_command() {
   local depth=$1
   shift
@@ -158,7 +162,12 @@ check_simple_command() {
           uvx\ * | */uvx\ *) i=$((i + 1)) ;;
           *\ run\ *) i=$((i + 2)) ;;
           *\ tool\ run) i=$((i + 3)) ;;
-          *) return 0 ;;
+          *)
+            # Other forms (`uv --directory x run`, `uv -q run`): skip the word
+            # and keep looking, like an unknown wrapper.
+            i=$((i + 1))
+            continue
+            ;;
         esac
         while [ "$i" -lt "$n" ]; do
           case "${t[$i]}" in
@@ -187,8 +196,7 @@ check_simple_command() {
             *) break ;;
           esac
         done
-        [ "$found" = 1 ] || return 0
-        i=$j
+        if [ "$found" = 1 ]; then i=$j; else i=$((i + 1)); fi
         ;;
       alembic | */alembic)
         check_alembic "${t[@]:$((i + 1))}"
@@ -219,7 +227,10 @@ check_simple_command() {
         check_command $((depth + 1)) "${t[*]:$((i + 1))}"
         return 0
         ;;
-      *) return 0 ;;
+      # Unknown word (`timeout 60`, `poetry run`, an option or argument): it may
+      # be a wrapper, so skip it and keep looking. Blocking by mistake beats
+      # letting a forbidden command through.
+      *) i=$((i + 1)) ;;
     esac
   done
 }
@@ -255,6 +266,7 @@ check_command() {
               esac
               k=$((k + 1))
             done
+            [ "$d" = 0 ] || block "\`\$(\` is never closed, so this hook cannot check the command."
             check_command $((depth + 1)) "${s:$((i + 2)):$((k - i - 3))}"
             i=$((k - 1))
           else
@@ -264,6 +276,7 @@ check_command() {
         '`')
           k=$((i + 1))
           while [ "$k" -lt "$n" ] && [ "${s:$k:1}" != '`' ]; do k=$((k + 1)); done
+          [ "$k" -lt "$n" ] || block "a backtick is never closed, so this hook cannot check the command."
           check_command $((depth + 1)) "${s:$((i + 1)):$((k - i - 1))}"
           i=$k
           ;;
@@ -305,6 +318,9 @@ check_command() {
     i=$((i + 1))
   done
 
+  # An open quote (e.g. `it's` in an unquoted heredoc) hides the rest of the
+  # command from the check.
+  [ -z "$q" ] || block "a $q quote is never closed, so this hook cannot check the command."
   [ "$has_tok" = 1 ] && seg+=("$tok")
   [ "${#seg[@]}" -gt 0 ] && check_simple_command "$depth" "${seg[@]}"
   return 0

@@ -48,7 +48,7 @@ run_case() {
     result="FAIL (message lacks: $must)"
   fi
   if [ "$result" = PASS ]; then pass=$((pass + 1)); else fail=$((fail + 1)); fi
-  printf '| %2d | %-72s | %-6s | %-5s (%d) | %s |\n' "$num" "$cmd" "$expect" "$actual" "$code" "$result"
+  printf '| %2d | %-72s | %-6s | %-5s (%d) | %s |\n' "$num" "${cmd//$'\n'/\\n}" "$expect" "$actual" "$code" "$result"
 }
 
 printf '| %2s | %-72s | %-6s | %-9s | %s |\n' "#" "Command" "Expect" "Actual" "Result"
@@ -82,6 +82,21 @@ run_case block 'sudo -u root alembic upgrade head'
 run_case block 'if uv run alembic upgrade head; then echo ok; fi'
 run_case block 'while uv run alembic upgrade head; do break; done'
 run_case block 'sudo -g staff alembic upgrade head'
+# Unknown words and uv global options: keep looking for alembic/git instead of allowing.
+run_case block 'uv --directory fastapi-practice run alembic upgrade head'
+run_case block 'uv -q run alembic upgrade head'
+run_case block 'timeout 60 uv run alembic upgrade head'
+run_case block 'timeout 30 git push origin dev'
+run_case block 'poetry run alembic upgrade head'
+run_case block 'sudo git push origin dev'
+run_case block 'env X=1 git push origin dev'
+run_case allow 'uv --directory fastapi-practice run alembic current'
+run_case allow 'timeout 30 git push origin feat/x'
+run_case allow 'grep -rn "alembic upgrade" docs/'
+# Input the parser can't close (quote or $( left open): block.
+run_case block $'cat <<EOF\nit\'s done\nEOF\nuv run alembic upgrade head'
+run_case block 'echo "$(uv run alembic upgrade'
+run_case block 'echo "$(echo ")"; uv run alembic upgrade head)"'
 
 echo
 echo "$pass passed, $fail failed"
