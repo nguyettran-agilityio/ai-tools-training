@@ -6,7 +6,7 @@ this module allowed to import `Book` or `sqlmodel` itself.
 import uuid
 
 # Third-party
-from sqlmodel import func, or_, select, update
+from sqlmodel import case, func, or_, select, update
 
 # Local application
 # core
@@ -75,10 +75,16 @@ class BookRepository(BookRepositoryInterface):
         return result.rowcount > 0
 
     def increment_available_copies(self, book_id: uuid.UUID) -> None:
-        """Atomically give one copy back, capped at `total_copies`."""
+        """Atomically give one copy back, capped at `total_copies`. `CASE`, not
+        scalar `MIN(a, b)`, which Postgres doesn't have."""
+        incremented = Book.available_copies + 1
         self.backend.session.exec(
             update(Book)
             .where(Book.id == book_id)
-            .values(available_copies=func.min(Book.available_copies + 1, Book.total_copies))
+            .values(
+                available_copies=case(
+                    (incremented > Book.total_copies, Book.total_copies), else_=incremented
+                )
+            )
         )
         self.backend.session.flush()

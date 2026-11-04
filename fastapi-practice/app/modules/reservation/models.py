@@ -10,6 +10,9 @@ from sqlalchemy import Enum as SAEnum
 from sqlmodel import Field, SQLModel
 
 # Local application
+# core
+from app.core.db_types import UTCDateTime
+
 # reservation
 from app.modules.reservation.enums import ReservationStatus
 
@@ -31,5 +34,5 @@ class Reservation(SQLModel, table=True):
         ),
     )
     # FIFO ordering key for the per-book reservation queue.
-    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
-    notified_at: datetime | None = None
+    created_at: datetime = Field(sa_type=UTCDateTime, default_factory=lambda: datetime.now(UTC))
+    notified_at: datetime | None = Field(default=None, sa_type=UTCDateTime)

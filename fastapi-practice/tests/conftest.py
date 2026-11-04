@@ -1,5 +1,6 @@
 """Shared pytest fixtures."""
 
+import os
 from collections.abc import Callable, Generator
 
 import pytest
@@ -9,12 +10,19 @@ from sqlmodel.pool import StaticPool
 
 from app.core import db as _db  # noqa: F401  (registers the SQLite FK-pragma listener)
 from app.core import model_registry  # noqa: F401  (registers all tables on metadata)
+from app.core.config import normalize_database_url
 from app.core.db import get_session
 from app.core.deps import rate_limit_auth
 from app.core.rate_limiter import get_rate_limiter
 from app.core.security import hash_password
 from app.main import app
 from app.modules.user.models import User, UserRole
+
+# Same `postgres://` / `postgresql://` -> psycopg 3 rewrite as `Settings.database_url`.
+_raw_test_database_url = os.environ.get("TEST_DATABASE_URL")
+TEST_DATABASE_URL = (
+    normalize_database_url(_raw_test_database_url) if _raw_test_database_url else None
+)
 
 
 @pytest.fixture(autouse=True)
@@ -31,15 +39,23 @@ def db_engine():
     """In-memory SQLite engine (`StaticPool`), shared by the `client` fixture's
     `get_session` override — exposed separately so tests can also open their
     own `Session(db_engine)` to set up rows the API can't produce directly
-    (e.g. an inactive user)."""
-    engine = create_engine(
-        "sqlite://",
-        connect_args={"check_same_thread": False},
-        poolclass=StaticPool,
-    )
+    (e.g. an inactive user).
+
+    With `TEST_DATABASE_URL` set (CI's Postgres job), the same tests run
+    against that database instead. Read from the environment, not
+    `Settings`, so `DATABASE_URL` and the app's own settings stay untouched."""
+    if TEST_DATABASE_URL:
+        engine = create_engine(TEST_DATABASE_URL)
+    else:
+        engine = create_engine(
+            "sqlite://",
+            connect_args={"check_same_thread": False},
+            poolclass=StaticPool,
+        )
     SQLModel.metadata.create_all(engine)
     yield engine
     SQLModel.metadata.drop_all(engine)
+    engine.dispose()
 
 
 @pytest.fixture

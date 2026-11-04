@@ -5,6 +5,10 @@ from datetime import UTC, datetime
 # Third-party
 from sqlmodel import Field, SQLModel
 
+# Local application
+# core
+from app.core.db_types import UTCDateTime
+
 
 class Borrowing(SQLModel, table=True):
     id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
@@ -17,13 +21,13 @@ class Borrowing(SQLModel, table=True):
     # violation.
     user_id: uuid.UUID = Field(foreign_key="user.id", ondelete="CASCADE", index=True)
     book_id: uuid.UUID = Field(foreign_key="book.id", ondelete="CASCADE", index=True)
-    borrowed_at: datetime
-    due_date: datetime
-    returned_at: datetime | None = None
+    borrowed_at: datetime = Field(sa_type=UTCDateTime)
+    due_date: datetime = Field(sa_type=UTCDateTime)
+    returned_at: datetime | None = Field(default=None, sa_type=UTCDateTime)
     # Set once by `BorrowingService.renew`; `None` means the loan was never
     # renewed, which is all the "renew at most once" rule needs.
-    renewed_at: datetime | None = None
-    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    renewed_at: datetime | None = Field(default=None, sa_type=UTCDateTime)
+    created_at: datetime = Field(sa_type=UTCDateTime, default_factory=lambda: datetime.now(UTC))
 
 
 class BorrowingBan(SQLModel, table=True):
@@ -32,12 +36,12 @@ class BorrowingBan(SQLModel, table=True):
     # One row per member: `BorrowingBanRepository.extend` upserts on this PK,
     # and an expired row is reused on the next late return.
     user_id: uuid.UUID = Field(foreign_key="user.id", ondelete="CASCADE", primary_key=True)
-    banned_until: datetime = Field(index=True)
+    banned_until: datetime = Field(sa_type=UTCDateTime, index=True)
     # The late return that last set or extended the ban. `SET NULL`, not
     # `CASCADE`: deleting a book cascades to its borrowings, but the ban
     # itself must survive.
     source_borrowing_id: uuid.UUID | None = Field(
         default=None, foreign_key="borrowing.id", ondelete="SET NULL", index=True
     )
-    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
-    updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    created_at: datetime = Field(sa_type=UTCDateTime, default_factory=lambda: datetime.now(UTC))
+    updated_at: datetime = Field(sa_type=UTCDateTime, default_factory=lambda: datetime.now(UTC))

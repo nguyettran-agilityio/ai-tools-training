@@ -128,3 +128,39 @@ def test_late_return_ban_days_above_upper_bound_is_rejected(monkeypatch):
         get_settings()
 
     get_settings.cache_clear()
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "postgres://user:pass@db.example.com:5432/library",
+        "postgresql://user:pass@db.example.com:5432/library",
+    ],
+)
+def test_postgres_url_is_pointed_at_psycopg(url):
+    """Provider URLs (`postgres://`, `postgresql://`) use psycopg 3, the
+    installed driver, not SQLAlchemy's psycopg2 default."""
+    settings = Settings(
+        _env_file=None,
+        jwt_secret_key="test-secret-key-with-at-least-32-characters",
+        database_url=url,
+    )
+
+    assert settings.database_url == "postgresql+psycopg://user:pass@db.example.com:5432/library"
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "postgresql+psycopg://user:pass@db.example.com:5432/library",
+        "sqlite:///./library.db",
+    ],
+)
+def test_other_database_urls_are_left_unchanged(url):
+    settings = Settings(
+        _env_file=None,
+        jwt_secret_key="test-secret-key-with-at-least-32-characters",
+        database_url=url,
+    )
+
+    assert settings.database_url == url

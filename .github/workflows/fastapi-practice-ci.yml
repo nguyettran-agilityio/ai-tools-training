@@ -53,3 +53,64 @@ jobs:
 
       - name: Pytest
         run: uv run pytest
+
+  postgres:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: fastapi-practice
+    env:
+      # Same as `checks`. DATABASE_URL is set per step below, never for
+      # pytest: tests/core/test_config.py asserts it keeps its default.
+      JWT_SECRET_KEY: ci-test-secret-key-not-used-anywhere-real
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: library
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          cache-dependency-glob: fastapi-practice/uv.lock
+
+      - name: Install dependencies
+        run: uv sync --locked
+
+      - name: Create test database
+        env:
+          PGPASSWORD: postgres
+        run: createdb -h localhost -U postgres library_test
+
+      - name: Alembic upgrade
+        env:
+          DATABASE_URL: postgresql+psycopg://postgres:postgres@localhost:5432/library
+        run: uv run alembic upgrade head
+
+      - name: Alembic check (models match migrations)
+        env:
+          DATABASE_URL: postgresql+psycopg://postgres:postgres@localhost:5432/library
+        run: uv run alembic check
+
+      - name: Seed demo data on the migrated schema
+        env:
+          DATABASE_URL: postgresql+psycopg://postgres:postgres@localhost:5432/library
+        run: uv run python -m app.cli.seed_demo --force
+
+      - name: Pytest on Postgres
+        env:
+          TEST_DATABASE_URL: postgresql+psycopg://postgres:postgres@localhost:5432/library_test
+        run: uv run pytest

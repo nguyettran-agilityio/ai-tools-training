@@ -11,8 +11,10 @@ from app.modules.borrowing.schemas import BorrowingBanRead, BorrowingRead
 
 
 def _as_utc(value: datetime | None) -> datetime | None:
-    """SQLite round-trips datetimes as naive; reattach UTC so `BorrowingRead.status`
-    can compare against an aware `datetime.now(UTC)` without raising."""
+    """Guarantee an aware UTC value so `BorrowingRead.status` can compare
+    against `datetime.now(UTC)` without raising. Columns loaded from the DB
+    already come back aware via `UTCDateTime` (`app/core/db_types.py`); this
+    only matters for a naive value set on a model that was never reloaded."""
     if value is not None and value.tzinfo is None:
         return value.replace(tzinfo=UTC)
     return value

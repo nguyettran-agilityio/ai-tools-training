@@ -8,6 +8,10 @@ from datetime import UTC, datetime
 # Third-party
 from sqlmodel import Field, SQLModel
 
+# Local application
+# core
+from app.core.db_types import UTCDateTime
+
 
 class Book(SQLModel, table=True):
     id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
@@ -18,4 +22,4 @@ class Book(SQLModel, table=True):
     category_id: uuid.UUID = Field(foreign_key="category.id", index=True)
     total_copies: int
     available_copies: int
-    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    created_at: datetime = Field(sa_type=UTCDateTime, default_factory=lambda: datetime.now(UTC))
