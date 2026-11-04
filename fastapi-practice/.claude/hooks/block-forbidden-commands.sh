@@ -1,26 +1,40 @@
 #!/usr/bin/env bash
 # PreToolUse hook (Bash): block commands the team forbids Claude from running.
-#   - alembic upgrade (any form: alembic, uv run alembic, python -m alembic)
+#   - alembic upgrade, when alembic is run as a command word: first word, or
+#     after VAR=..., reserved words (then, do, {, !), env, exec/command/nohup/
+#     time/sudo, uv run / uv tool run / uvx, python -m, or any unknown word
+#     (timeout 60, poetry run). Text inside a string (commit message, echo)
+#     does not count.
 #   - git push to dev or main (explicit refspec, HEAD while on dev/main,
 #     bare `git push` while on dev/main, --all, --mirror)
+# Scripts given to bash -c / sh -c / eval, and "$(...)" or `...` inside double
+# quotes, are checked too. A quote, $( or backtick that is never closed blocks,
+# since the rest of the command can't be checked.
 # Blocks by exiting 2 with the reason on stderr; Claude sees the reason.
 set -u
 
+block() {
+  echo "Blocked by team hook: $1" >&2
+  echo "${2:-Ask the user to run this themselves if it is really needed.}" >&2
+  exit 2
+}
+
 if ! command -v jq >/dev/null 2>&1; then
-  echo "block-forbidden-commands hook: jq not found, skipping" >&2
-  exit 0
+  block "jq is not installed, so this hook cannot check the command." \
+    "Stop and ask the user to install jq (e.g. \`brew install jq\`), then retry."
 fi
 
 command=$(jq -r '.tool_input.command // empty')
 [ -n "$command" ] || exit 0
 
-PROTECTED_BRANCHES="dev main"
+# Fast path: nothing to check, skip the char-by-char parse below.
+case "$command" in
+  *alembic* | *push*) ;;
+  *) exit 0 ;;
+esac
 
-block() {
-  echo "Blocked by team hook: $1" >&2
-  echo "Ask the user to run this themselves if it is really needed." >&2
-  exit 2
-}
+PROTECTED_BRANCHES="dev main"
+MAX_DEPTH=5
 
 is_protected() {
   local branch=$1
@@ -43,15 +57,11 @@ refspec_dest() {
   echo "$spec"
 }
 
-# Only the alembic subcommand (first non-option token after `alembic`) counts,
-# so `alembic revision -m "upgrade users"` is allowed.
+# Args: the tokens after `alembic`. Only the subcommand (first non-option
+# token) counts, so `alembic revision -m "upgrade users"` is allowed.
 check_alembic() {
-  local seen_alembic=0 skip=0
+  local skip=0 tok
   for tok in "$@"; do
-    if [ "$seen_alembic" = 0 ]; then
-      case "$tok" in alembic | */alembic) seen_alembic=1 ;; esac
-      continue
-    fi
     if [ "$skip" = 1 ]; then
       skip=0
       continue
@@ -59,15 +69,19 @@ check_alembic() {
     case "$tok" in
       -c | --config | -n | --name | -x) skip=1 ;;
       -*) ;;
-      upgrade) block "\`alembic upgrade\` is forbidden. The user applies migrations." ;;
+      upgrade)
+        block "\`alembic upgrade\` is forbidden: Claude never applies migrations." \
+          "If a migration needs applying, stop here and ask the user to run \`uv run alembic upgrade head\` in their own terminal. Continue only after they confirm it ran."
+        ;;
       *) return 0 ;;
     esac
   done
 }
 
+# Args: the tokens after `git`.
 check_git_push() {
-  local i=0 seen_git=0 in_push=0 positional=()
-  local toks=("$@")
+  local i=0 in_push=0 tok spec dest branch
+  local toks=("$@") positional=()
   while [ "$i" -lt "${#toks[@]}" ]; do
     tok=${toks[$i]}
     if [ "$in_push" = 1 ]; then
@@ -77,16 +91,12 @@ check_git_push() {
         -*) ;;
         *) positional+=("$tok") ;;
       esac
-    elif [ "$seen_git" = 1 ]; then
+    else
       case "$tok" in
         push) in_push=1 ;;
         -C | -c | --git-dir | --work-tree) i=$((i + 1)) ;;
         -*) ;;
         *) return 0 ;; # subcommand is not push, e.g. `git commit -m push`
-      esac
-    else
-      case "$tok" in
-        git | */git) seen_git=1 ;;
       esac
     fi
     i=$((i + 1))
@@ -106,16 +116,215 @@ check_git_push() {
   done
 }
 
-# Split into simple commands on ; & | newline ( ) and backticks, then check each.
-while IFS= read -r segment; do
-  read -ra raw <<<"$segment"
-  toks=()
-  for t in "${raw[@]+"${raw[@]}"}"; do
-    toks+=("${t//[\"\']/}")
+# Args: depth, then the tokens of one simple command (quotes already removed).
+# Skips VAR=..., reserved words, known wrappers (env, sudo, uv run, python -m...)
+# and any unknown word until it reaches alembic, git, a shell -c or eval, then
+# checks that. Fails closed: an unknown word never ends the search.
+check_simple_command() {
+  local depth=$1
+  shift
+  local t=("$@")
+  local i=0 j n=${#t[@]} found w
+  while [ "$i" -lt "$n" ]; do
+    case "${t[$i]}" in
+      [A-Za-z_]*=*) i=$((i + 1)) ;;
+      # Reserved words that start a command: `then cmd`, `do cmd`, `{ cmd`, `! cmd`.
+      if | then | else | elif | while | until | do | '{' | '!') i=$((i + 1)) ;;
+      env | */env)
+        i=$((i + 1))
+        while [ "$i" -lt "$n" ]; do
+          case "${t[$i]}" in
+            -u | --unset | -C | --chdir) i=$((i + 2)) ;;
+            -* | [A-Za-z_]*=*) i=$((i + 1)) ;;
+            *) break ;;
+          esac
+        done
+        ;;
+      exec | command | nohup | time | sudo)
+        w=${t[$i]}
+        i=$((i + 1))
+        while [ "$i" -lt "$n" ]; do
+          case "${t[$i]}" in
+            -u | -g | -U | -C | -D | -p | -r | -t | -T | --user | --group | \
+              --other-user | --close-from | --chdir | --prompt | --role | --type | \
+              --command-timeout)
+              # sudo options that take a value: `sudo -u root cmd`.
+              if [ "$w" = sudo ]; then i=$((i + 2)); else i=$((i + 1)); fi
+              ;;
+            -*) i=$((i + 1)) ;;
+            *) break ;;
+          esac
+        done
+        ;;
+      uv | */uv | uvx | */uvx)
+        # uv run / uv tool run / uvx, then their options.
+        case "${t[$i]} ${t[$((i + 1))]:-} ${t[$((i + 2))]:-}" in
+          uvx\ * | */uvx\ *) i=$((i + 1)) ;;
+          *\ run\ *) i=$((i + 2)) ;;
+          *\ tool\ run) i=$((i + 3)) ;;
+          *)
+            # Other forms (`uv --directory x run`, `uv -q run`): skip the word
+            # and keep looking, like an unknown wrapper.
+            i=$((i + 1))
+            continue
+            ;;
+        esac
+        while [ "$i" -lt "$n" ]; do
+          case "${t[$i]}" in
+            --from | --with | --with-editable | --with-requirements | --python | -p | \
+              --project | --directory | --package | --env-file | --extra | \
+              --group | --only-group | --no-group | --index | --default-index)
+              i=$((i + 2))
+              ;;
+            -*) i=$((i + 1)) ;;
+            *) break ;;
+          esac
+        done
+        ;;
+      python | python3 | python3.* | */python | */python3 | */python3.*)
+        # python [opts] -m alembic ...: continue at the module name.
+        j=$((i + 1))
+        found=0
+        while [ "$j" -lt "$n" ]; do
+          case "${t[$j]}" in
+            -m)
+              found=1
+              j=$((j + 1))
+              break
+              ;;
+            -*) j=$((j + 1)) ;;
+            *) break ;;
+          esac
+        done
+        if [ "$found" = 1 ]; then i=$j; else i=$((i + 1)); fi
+        ;;
+      alembic | */alembic)
+        check_alembic "${t[@]:$((i + 1))}"
+        return 0
+        ;;
+      git | */git)
+        check_git_push "${t[@]:$((i + 1))}"
+        return 0
+        ;;
+      bash | sh | zsh | dash | ksh | */bash | */sh | */zsh | */dash | */ksh)
+        # bash [opts] -c 'script' ...: check the script.
+        j=$((i + 1))
+        while [ "$j" -lt "$n" ]; do
+          case "${t[$j]}" in
+            -o | +o) j=$((j + 2)) ;;
+            --*) j=$((j + 1)) ;;
+            -*c*)
+              check_command $((depth + 1)) "${t[$((j + 1))]:-}"
+              return 0
+              ;;
+            -*) j=$((j + 1)) ;;
+            *) return 0 ;; # runs a script file, nothing to check here
+          esac
+        done
+        return 0
+        ;;
+      eval)
+        check_command $((depth + 1)) "${t[*]:$((i + 1))}"
+        return 0
+        ;;
+      # Unknown word (`timeout 60`, `poetry run`, an option or argument): it may
+      # be a wrapper, so skip it and keep looking. Blocking by mistake beats
+      # letting a forbidden command through.
+      *) i=$((i + 1)) ;;
+    esac
   done
-  [ "${#toks[@]}" -gt 0 ] || continue
-  check_alembic "${toks[@]}"
-  check_git_push "${toks[@]}"
-done < <(printf '%s\n' "$command" | tr ';&|()`' '\n\n\n\n\n\n')
+}
 
+# Args: depth, command line. Splits it into simple commands on ; & | ( ) `
+# and newlines outside quotes, removes quotes, and checks each one.
+# "$(...)" and `...` inside double quotes also run, so they are checked as
+# command lines of their own.
+check_command() {
+  local depth=$1 s=$2
+  [ "$depth" -le "$MAX_DEPTH" ] || block "command is nested too deeply to check."
+  local seg=() tok="" has_tok=0 q="" c i=0 k d n=${#s}
+
+  while [ "$i" -lt "$n" ]; do
+    c=${s:$i:1}
+    if [ "$q" = "'" ]; then
+      if [ "$c" = "'" ]; then q=""; else tok+=$c; fi
+    elif [ "$q" = '"' ]; then
+      case "$c" in
+        '"') q="" ;;
+        '\')
+          i=$((i + 1))
+          tok+=${s:$i:1}
+          ;;
+        '$')
+          if [ "${s:$((i + 1)):1}" = "(" ]; then
+            k=$((i + 2))
+            d=1
+            while [ "$k" -lt "$n" ] && [ "$d" -gt 0 ]; do
+              case "${s:$k:1}" in
+                '(') d=$((d + 1)) ;;
+                ')') d=$((d - 1)) ;;
+              esac
+              k=$((k + 1))
+            done
+            [ "$d" = 0 ] || block "\`\$(\` is never closed, so this hook cannot check the command."
+            check_command $((depth + 1)) "${s:$((i + 2)):$((k - i - 3))}"
+            i=$((k - 1))
+          else
+            tok+=$c
+          fi
+          ;;
+        '`')
+          k=$((i + 1))
+          while [ "$k" -lt "$n" ] && [ "${s:$k:1}" != '`' ]; do k=$((k + 1)); done
+          [ "$k" -lt "$n" ] || block "a backtick is never closed, so this hook cannot check the command."
+          check_command $((depth + 1)) "${s:$((i + 1)):$((k - i - 1))}"
+          i=$k
+          ;;
+        *) tok+=$c ;;
+      esac
+    else
+      case "$c" in
+        "'" | '"')
+          q=$c
+          has_tok=1
+          ;;
+        '\')
+          i=$((i + 1))
+          [ "${s:$i:1}" = $'\n' ] || {
+            tok+=${s:$i:1}
+            has_tok=1
+          }
+          ;;
+        ' ' | $'\t' | ';' | '&' | '|' | '(' | ')' | '`' | $'\n')
+          if [ "$has_tok" = 1 ]; then
+            seg+=("$tok")
+            tok=""
+            has_tok=0
+          fi
+          case "$c" in
+            ' ' | $'\t') ;;
+            *)
+              [ "${#seg[@]}" -gt 0 ] && check_simple_command "$depth" "${seg[@]}"
+              seg=()
+              ;;
+          esac
+          ;;
+        *)
+          tok+=$c
+          has_tok=1
+          ;;
+      esac
+    fi
+    i=$((i + 1))
+  done
+
+  # An open quote (e.g. `it's` in an unquoted heredoc) hides the rest of the
+  # command from the check.
+  [ -z "$q" ] || block "a $q quote is never closed, so this hook cannot check the command."
+  [ "$has_tok" = 1 ] && seg+=("$tok")
+  [ "${#seg[@]}" -gt 0 ] && check_simple_command "$depth" "${seg[@]}"
+  return 0
+}
+
+check_command 0 "$command"
 exit 0
