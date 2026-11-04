@@ -252,7 +252,7 @@ class FakeBorrowingRepository(BorrowingRepositoryInterface):
             for row in self._rows.values()
             if not overdue_only or (row.returned_at is None and row.due_date < reference_time)
         ]
-        items.sort(key=lambda row: row.borrowed_at, reverse=True)
+        items.sort(key=lambda row: (row.borrowed_at, row.id), reverse=True)
         return items[offset : offset + limit], len(items)
 
     def list_late_returns(
@@ -270,7 +270,7 @@ class FakeBorrowingRepository(BorrowingRepositoryInterface):
             and (returned_from is None or row.returned_at >= returned_from)
             and (returned_to is None or row.returned_at <= returned_to)
         ]
-        items.sort(key=lambda row: row.returned_at or row.due_date, reverse=True)
+        items.sort(key=lambda row: (row.returned_at or row.due_date, row.id), reverse=True)
         return items[offset : offset + limit], len(items)
 
     def count_active_by_book(self, book_id: uuid.UUID) -> int:

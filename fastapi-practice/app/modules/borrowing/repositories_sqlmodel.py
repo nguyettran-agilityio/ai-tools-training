@@ -100,7 +100,9 @@ class BorrowingRepository(BorrowingRepositoryInterface):
 
         total = self.backend.session.exec(count_stmt).one()
         items = self.backend.session.exec(
-            list_stmt.order_by(Borrowing.borrowed_at.desc()).offset(offset).limit(limit)
+            list_stmt.order_by(Borrowing.borrowed_at.desc(), Borrowing.id.desc())
+            .offset(offset)
+            .limit(limit)
         ).all()
         return [to_borrowing_read(item) for item in items], total
 
@@ -129,7 +131,7 @@ class BorrowingRepository(BorrowingRepositoryInterface):
 
         total = self.backend.session.exec(count_stmt).one()
         items = self.backend.session.exec(
-            list_stmt.order_by(returned_at.desc()).offset(offset).limit(limit)
+            list_stmt.order_by(returned_at.desc(), Borrowing.id.desc()).offset(offset).limit(limit)
         ).all()
         return [to_borrowing_read(item) for item in items], total
 

@@ -59,7 +59,7 @@ Reservations are not affected, including the existing auto-reserve on an out-of-
 - FR-4.4 The same applies to a member blocked by FR-2 (holding an overdue loan). *Resolved by Lead (C-20): confirmed.*
 
 ### FR-5 Overdue report (admin)
-- FR-5.1 Currently overdue, unreturned loans, ordered newest borrow first (`borrowedAt` descending). *Resolved by Lead: matches the existing `list_all` order reused by `report_overdue`.*
+- FR-5.1 Currently overdue, unreturned loans, ordered newest borrow first (`borrowedAt` descending, ties broken by `id` descending so pages are stable). *Resolved by Lead: matches the existing `list_all` order reused by `report_overdue`.*
 - FR-5.2 Late returns, filterable by a `from`/`to` range on `returned_at`, paginated, newest first.
 - FR-5.3 Currently banned members, with `bannedUntil`, paginated, soonest-ending first.
 - FR-5.4 All report endpoints are admin-only (`require_admin`). *Resolved by Lead (OQ-3): librarian = admin.*
@@ -169,7 +169,7 @@ def list_late_returns(
 ) -> tuple[list[BorrowingRead], int]: ...
 ```
 
-- `list_late_returns` filters `returned_at IS NOT NULL AND returned_at > due_date`, plus optional range on `returned_at`, built with the existing `apply_filters` helper; ordered `returned_at DESC`.
+- `list_late_returns` filters `returned_at IS NOT NULL AND returned_at > due_date`, plus optional range on `returned_at`, built with the existing `apply_filters` helper; ordered `returned_at DESC, id DESC` (the `id` tie-break keeps pages stable when several loans share a `returned_at`).
 - `deps.py` gets `get_borrowing_ban_repository` constructing `SQLModelBackend[BorrowingBan, BorrowingBanRead, BorrowingBanUpdateFields]` — the only place in the app that constructs a backend.
 - `tests/fakes.py` gets `FakeBorrowingBanRepository` and the two new `FakeBorrowingRepository` methods.
 
@@ -355,4 +355,4 @@ Dev questions raised while implementing, agreed by BA. Where a decision replaces
 |---|---|---|---|
 | B-40-1 | `updated_at` changes only when `banned_until` actually changes, in the same upsert and by the same rule as `source_borrowing_id` (Q-40-2). If `returned_at + N <= banned_until`, the row is left untouched. `created_at` is kept on every reuse. | Q-40-3 | [#40](https://github.com/nguyettran-agilityio/ai-tools-training/issues/40#issuecomment-6493325742) |
 | B-42-1 | The overdue and late-returns reports use a new per-page cache helper: each distinct `user_id` / `book_id` is fetched once per page (§5.4). `notify_overdue` is not changed and still calls `get_by_id` for every row. | — | [#42](https://github.com/nguyettran-agilityio/ai-tools-training/issues/42#issuecomment-6493326284) |
-| B-42-2 | A date-only `to` (e.g. `to=2026-11-01`) covers that whole UTC day: the filter is `returned_at < 2026-11-02T00:00:00Z`. The `from > to` check (400) uses that end-of-day bound, so `from=2026-11-01T12:00:00Z&to=2026-11-01` is valid. A `to` with a time part, including `T00:00:00`, keeps the inclusive bound `returned_at <= to` (Q-42-4 still applies). A date-only `from` already means 00:00 UTC of that day, so it is unchanged. | Dev Q2 on #42 (midnight UTC, inclusive), agreed earlier | [#42](https://github.com/nguyettran-agilityio/ai-tools-training/issues/42#issuecomment-6518851128) |
+| B-42-2 | A date-only `to` (e.g. `to=2026-11-01`) covers that whole UTC day: it is turned into `2026-11-01T23:59:59.999999Z` and the filter stays `returned_at <= to`. The `from > to` check (400) uses that end-of-day bound, so `from=2026-11-01T12:00:00Z&to=2026-11-01` is valid. A `to` with a time part, including `T00:00:00`, keeps the inclusive bound `returned_at <= to` (Q-42-4 still applies). A date-only `from` already means 00:00 UTC of that day, so it is unchanged. | [Dev Q2 on #42](https://github.com/nguyettran-agilityio/ai-tools-training/issues/42#issuecomment-6493322472) (midnight UTC, inclusive), agreed earlier | [#42](https://github.com/nguyettran-agilityio/ai-tools-training/issues/42#issuecomment-6518851128) |

@@ -137,6 +137,31 @@ class TestBorrowingRepository:
         assert total == 1
         assert len(items) == 1
 
+    def test_list_all_overdue_ties_on_borrowed_at_are_ordered_by_id(self, session):
+        """Same `borrowed_at` → `id` desc, so pages are stable. Inserted in
+        ascending id order so insertion order cannot pass for the tie-break."""
+        now = datetime(2026, 11, 2, tzinfo=UTC)
+        borrowed_at = now - timedelta(days=20)
+        ids = [uuid.UUID(int=n) for n in (1, 2, 3, 4)]
+        user = make_user(session)
+        book = make_book(session, category_id=make_category(session).id)
+        for id_ in ids:
+            make_borrowing(
+                session,
+                user.id,
+                book.id,
+                id=id_,
+                borrowed_at=borrowed_at,
+                due_date=borrowed_at + timedelta(days=14),
+            )
+        repo = self._make_repo(session)
+
+        page1, total = repo.list_all(offset=0, limit=2, overdue_only=True, now=now)
+        page2, _ = repo.list_all(offset=2, limit=2, overdue_only=True, now=now)
+
+        assert total == 4
+        assert [item.id for item in page1 + page2] == sorted(ids, reverse=True)
+
     def test_get_active_by_user_and_book(self, session):
         user = make_user(session)
         category = make_category(session)
@@ -297,6 +322,31 @@ class TestListLateReturns:
         assert {item.id for item in page1}.isdisjoint({item.id for item in page2})
         assert page1[0].returned_at is not None
         assert page1[0].returned_at.tzinfo is UTC
+
+    def test_ties_on_returned_at_are_ordered_by_id(self, session):
+        """Same `returned_at` → `id` desc, so pages are stable. Inserted in
+        ascending id order so insertion order cannot pass for the tie-break."""
+        returned_at = datetime(2026, 11, 1, 12, tzinfo=UTC)
+        ids = [uuid.UUID(int=n) for n in (1, 2, 3, 4)]
+        user = make_user(session)
+        book = make_book(session, category_id=make_category(session).id)
+        for id_ in ids:
+            make_borrowing(
+                session,
+                user.id,
+                book.id,
+                id=id_,
+                borrowed_at=returned_at - timedelta(days=15),
+                due_date=returned_at - timedelta(days=1),
+                returned_at=returned_at,
+            )
+        repo = self._make_repo(session)
+
+        page1, total = repo.list_late_returns(0, 2)
+        page2, _ = repo.list_late_returns(2, 2)
+
+        assert total == 4
+        assert [item.id for item in page1 + page2] == sorted(ids, reverse=True)
 
 
 class TestBorrowingBanRepository:
