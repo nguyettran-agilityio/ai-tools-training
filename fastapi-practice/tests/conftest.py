@@ -10,6 +10,7 @@ from sqlmodel.pool import StaticPool
 
 from app.core import db as _db  # noqa: F401  (registers the SQLite FK-pragma listener)
 from app.core import model_registry  # noqa: F401  (registers all tables on metadata)
+from app.core.config import normalize_database_url
 from app.core.db import get_session
 from app.core.deps import rate_limit_auth
 from app.core.rate_limiter import get_rate_limiter
@@ -17,7 +18,11 @@ from app.core.security import hash_password
 from app.main import app
 from app.modules.user.models import User, UserRole
 
-TEST_DATABASE_URL = os.environ.get("TEST_DATABASE_URL")
+# Same `postgres://` / `postgresql://` -> psycopg 3 rewrite as `Settings.database_url`.
+_raw_test_database_url = os.environ.get("TEST_DATABASE_URL")
+TEST_DATABASE_URL = (
+    normalize_database_url(_raw_test_database_url) if _raw_test_database_url else None
+)
 
 
 @pytest.fixture(autouse=True)

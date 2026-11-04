@@ -12,6 +12,16 @@ from pydantic import Field, ValidationInfo, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
+def normalize_database_url(url: str) -> str:
+    """Hosted providers hand out `postgres://` / `postgresql://` URLs, and
+    SQLAlchemy maps a bare `postgresql://` to psycopg2, which isn't
+    installed. Point both at psycopg 3; any other URL is left as is."""
+    for prefix in ("postgres://", "postgresql://"):
+        if url.startswith(prefix):
+            return "postgresql+psycopg://" + url.removeprefix(prefix)
+    return url
+
+
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
@@ -67,13 +77,7 @@ class Settings(BaseSettings):
     @field_validator("database_url")
     @classmethod
     def _use_psycopg_driver(cls, value: str) -> str:
-        """Hosted providers hand out `postgres://` / `postgresql://` URLs, and
-        SQLAlchemy maps a bare `postgresql://` to psycopg2, which isn't
-        installed. Point both at psycopg 3; any other URL is left as is."""
-        for prefix in ("postgres://", "postgresql://"):
-            if value.startswith(prefix):
-                return "postgresql+psycopg://" + value.removeprefix(prefix)
-        return value
+        return normalize_database_url(value)
 
     @field_validator("cors_origins")
     @classmethod

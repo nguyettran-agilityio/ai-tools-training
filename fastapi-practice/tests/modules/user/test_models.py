@@ -72,7 +72,7 @@ class TestUserModel:
         user = make_user(session, email="admin@example.com", role=UserRole.ADMIN)
 
         raw_role = session.exec(
-            text("SELECT role FROM user WHERE email = :email").bindparams(email=user.email)
+            text('SELECT role FROM "user" WHERE email = :email').bindparams(email=user.email)
         ).one()[0]
         assert raw_role == "admin"
 
@@ -83,6 +83,6 @@ class TestUserModel:
         user = make_user(session, email="member@example.com")
 
         raw_role = session.exec(
-            text("SELECT role FROM user WHERE email = :email").bindparams(email=user.email)
+            text('SELECT role FROM "user" WHERE email = :email').bindparams(email=user.email)
         ).one()[0]
         assert raw_role == "member"
