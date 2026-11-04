@@ -10,6 +10,9 @@ from sqlalchemy import Enum as SAEnum
 from sqlmodel import Field, SQLModel
 
 # Local application
+# core
+from app.core.db_types import UTCDateTime
+
 # user
 from app.modules.user.enums import UserRole
 
@@ -29,4 +32,4 @@ class User(SQLModel, table=True):
         ),
     )
     is_active: bool = Field(default=True)
-    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    created_at: datetime = Field(sa_type=UTCDateTime, default_factory=lambda: datetime.now(UTC))

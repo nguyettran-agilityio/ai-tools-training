@@ -1,5 +1,6 @@
 """Shared pytest fixtures."""
 
+import os
 from collections.abc import Callable, Generator
 
 import pytest
@@ -16,6 +17,8 @@ from app.core.security import hash_password
 from app.main import app
 from app.modules.user.models import User, UserRole
 
+TEST_DATABASE_URL = os.environ.get("TEST_DATABASE_URL")
+
 
 @pytest.fixture(autouse=True)
 def _reset_rate_limiter():
@@ -31,15 +34,23 @@ def db_engine():
     """In-memory SQLite engine (`StaticPool`), shared by the `client` fixture's
     `get_session` override — exposed separately so tests can also open their
     own `Session(db_engine)` to set up rows the API can't produce directly
-    (e.g. an inactive user)."""
-    engine = create_engine(
-        "sqlite://",
-        connect_args={"check_same_thread": False},
-        poolclass=StaticPool,
-    )
+    (e.g. an inactive user).
+
+    With `TEST_DATABASE_URL` set (CI's Postgres job), the same tests run
+    against that database instead. Read from the environment, not
+    `Settings`, so `DATABASE_URL` and the app's own settings stay untouched."""
+    if TEST_DATABASE_URL:
+        engine = create_engine(TEST_DATABASE_URL)
+    else:
+        engine = create_engine(
+            "sqlite://",
+            connect_args={"check_same_thread": False},
+            poolclass=StaticPool,
+        )
     SQLModel.metadata.create_all(engine)
     yield engine
     SQLModel.metadata.drop_all(engine)
+    engine.dispose()
 
 
 @pytest.fixture

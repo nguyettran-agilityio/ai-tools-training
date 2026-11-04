@@ -382,6 +382,37 @@ Workflow when a model changes (e.g. adding a field to `Book`):
 Never hand-edit a migration that's already been applied anywhere but your
 own machine — write a new one instead, the same rule as regular git commits.
 
+## Running on Postgres
+
+SQLite stays the default for local dev and tests. To run on Postgres, set
+`DATABASE_URL` and run the migrations against the empty database:
+
+```bash
+export DATABASE_URL=postgresql+psycopg://user:pass@localhost:5432/library
+uv run alembic upgrade head
+uv run python -m app.cli.seed_admin
+```
+
+- The driver is psycopg 3. `postgres://` and `postgresql://` URLs (the form
+  hosted providers hand out) are rewritten to `postgresql+psycopg://`.
+- Data in `library.db` is **not** migrated: a Postgres database starts empty.
+- Datetime columns go through `app.core.db_types.UTCDateTime`, which always
+  stores naive UTC, so the session time zone doesn't matter.
+- The initial migration's `downgrade()` doesn't drop the `userrole` /
+  `reservationstatus` enum types, so `alembic downgrade base` followed by
+  `upgrade head` fails on Postgres. Drop the two types by hand if you need to.
+
+To run the test suite against Postgres, point `TEST_DATABASE_URL` at a
+scratch database (each test creates and drops every table in it):
+
+```bash
+TEST_DATABASE_URL=postgresql+psycopg://user:pass@localhost:5432/library_test uv run pytest
+```
+
+Do not set `DATABASE_URL` for the test run: `tests/core/test_config.py`
+asserts it keeps its default. CI runs both: the `checks` job on SQLite, the
+`postgres` job on a Postgres service.
+
 ## Seed the First Admin
 
 `POST /auth/register` always creates a `member` (see `AuthService.register`)

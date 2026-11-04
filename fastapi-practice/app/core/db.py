@@ -7,6 +7,7 @@ the README's "Database Migrations" section.
 """
 
 # Standard library
+import sqlite3
 from collections.abc import Generator
 from contextlib import contextmanager
 
@@ -27,7 +28,11 @@ engine = create_engine(settings.database_url, echo=False, connect_args=connect_a
 
 @event.listens_for(Engine, "connect")
 def _set_sqlite_pragma(dbapi_connection, connection_record) -> None:
-    """Enforce SQLite foreign key constraints, which are off by default."""
+    """Enforce SQLite foreign key constraints, which are off by default.
+    Registered on every `Engine`, so skip non-SQLite connections (Postgres
+    always enforces foreign keys)."""
+    if not isinstance(dbapi_connection, sqlite3.Connection):
+        return
     cursor = dbapi_connection.cursor()
     cursor.execute("PRAGMA foreign_keys=ON")
     cursor.close()

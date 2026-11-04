@@ -9,6 +9,9 @@ from typing import Sequence, Union
 
 from alembic import op
 import sqlalchemy as sa
+# Autogenerate renders `UTCDateTime` columns as `app.core.db_types.UTCDateTime()`
+# but doesn't add the import itself.
+import app.core.db_types
 ${imports if imports else ""}
 
 # revision identifiers, used by Alembic.

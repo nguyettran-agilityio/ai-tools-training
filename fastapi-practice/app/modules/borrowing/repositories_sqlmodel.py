@@ -9,6 +9,7 @@ from datetime import UTC, datetime
 
 # Third-party
 from sqlalchemy import case
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlmodel import and_, col, func, select
 
@@ -170,11 +171,15 @@ class BorrowingBanRepository(BorrowingBanRepositoryInterface):
         now: datetime,
     ) -> BorrowingBanRead:
         """One `INSERT ... ON CONFLICT DO UPDATE`, not read-then-write, so two
-        concurrent late returns cannot lose the later date. SQLite-specific
-        (scalar `MAX(a, b)`); revisit if the DB changes. Inside `SET`, the
-        bare column refers to the row's old value, so every `CASE` below
-        compares against the old `banned_until`, whatever the column order."""
-        stmt = sqlite_insert(BorrowingBan).values(
+        concurrent late returns cannot lose the later date. On Postgres the
+        second upsert waits on the row lock, then sees the first one's
+        committed value. SQLite and Postgres share the `on_conflict_do_update`
+        API; only the `insert` construct differs. Inside `SET`, the bare
+        column refers to the row's old value, so every `CASE` below compares
+        against the old `banned_until`, whatever the column order."""
+        dialect = self.backend.session.get_bind().dialect.name
+        insert = pg_insert if dialect == "postgresql" else sqlite_insert
+        stmt = insert(BorrowingBan).values(
             user_id=user_id,
             banned_until=banned_until,
             source_borrowing_id=source_borrowing_id,
@@ -186,7 +191,11 @@ class BorrowingBanRepository(BorrowingBanRepositoryInterface):
             index_elements=["user_id"],
             # `created_at` is left out on purpose: it keeps the first insert.
             set_={
-                "banned_until": func.max(BorrowingBan.banned_until, stmt.excluded.banned_until),
+                # `CASE`, not `MAX(a, b)`/`GREATEST(a, b)`: same SQL on both
+                # dialects, and the same `moves_later` test as the other two.
+                "banned_until": case(
+                    (moves_later, stmt.excluded.banned_until), else_=BorrowingBan.banned_until
+                ),
                 "source_borrowing_id": case(
                     (moves_later, stmt.excluded.source_borrowing_id),
                     else_=BorrowingBan.source_borrowing_id,

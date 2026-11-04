@@ -19,7 +19,8 @@ class Settings(BaseSettings):
     env: Literal["dev", "test", "prod"] = "dev"
     debug: bool = False
 
-    # Database
+    # Database — SQLite by default; set DATABASE_URL to a Postgres URL to
+    # switch (e.g. postgresql+psycopg://user:pass@host:5432/library).
     database_url: str = "sqlite:///./library.db"
 
     # Auth (PyJWT / bcrypt)
@@ -62,6 +63,17 @@ class Settings(BaseSettings):
     # any origin call the API from a browser. Set explicit origins via the
     # CORS_ORIGINS env var (JSON array, e.g. '["https://app.example.com"]').
     cors_origins: list[str] = ["*"]
+
+    @field_validator("database_url")
+    @classmethod
+    def _use_psycopg_driver(cls, value: str) -> str:
+        """Hosted providers hand out `postgres://` / `postgresql://` URLs, and
+        SQLAlchemy maps a bare `postgresql://` to psycopg2, which isn't
+        installed. Point both at psycopg 3; any other URL is left as is."""
+        for prefix in ("postgres://", "postgresql://"):
+            if value.startswith(prefix):
+                return "postgresql+psycopg://" + value.removeprefix(prefix)
+        return value
 
     @field_validator("cors_origins")
     @classmethod
