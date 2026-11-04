@@ -413,6 +413,74 @@ Do not set `DATABASE_URL` for the test run: `tests/core/test_config.py`
 asserts it keeps its default. CI runs both: the `checks` job on SQLite, the
 `postgres` job on a Postgres service.
 
+## Deploy to Vercel
+
+The app runs on Vercel as a single FastAPI function, with Neon Postgres added
+through the Vercel Marketplace. Vercel finds the `app` in `app/main.py`,
+installs dependencies from `pyproject.toml` + `uv.lock`, and picks Python from
+`.python-version`. There is no build command: **the build never runs
+migrations**. `vercel.json` pins the function to `sin1` (Singapore, next to
+the Neon database) and keeps tests, migrations and local `*.db` files out of
+the bundle.
+
+### One-time setup
+
+1. Vercel → **Add New Project**: import the repository, set **Root Directory**
+   to `fastapi-practice`, and leave the Build Command empty.
+2. **Settings → Environments → Production → Branch Tracking**: set it to `dev`.
+   Other branches get preview deployments.
+3. **Settings → Functions**: check that Fluid compute is on (the default for new
+   projects; WebSockets need it).
+4. Marketplace → **Neon → Install**: pick region **AWS Singapore
+   (ap-southeast-1)**, then **Storage → the database → Connect Project** for
+   Production, Preview and Development, and tick **Create database branch for
+   deployment → Preview** (leave Production unticked).
+5. **Settings → Environment Variables** (Production and Preview):
+
+   | Variable | Value |
+   | --- | --- |
+   | `DATABASE_URL` | Set by Neon (pooled). Do not create it by hand. |
+   | `JWT_SECRET_KEY` | A different value per environment (see `.env.example`). |
+   | `ENV` | `prod` |
+   | `CORS_ORIGINS` | Explicit JSON list, e.g. `["https://app.example.com"]`. `*` is rejected when `ENV=prod`. |
+   | `TRUST_PROXY_HEADERS` | `true`, so the auth rate limiter keys on the real client IP. |
+   | `SMTP_*` | Optional, for real email. |
+
+### Migrations and the first admin (run by hand)
+
+The app uses the pooled `DATABASE_URL`. Migrations need the direct connection,
+because Neon's pooler runs PgBouncer in transaction mode. In the Vercel
+project, open the **Storage** tab, select the Neon database (and the branch:
+`main` for production, `preview/<git-branch>` for a preview), and copy
+`DATABASE_URL_UNPOOLED`. Pass it inline. Never put it in `.env`:
+
+```bash
+DATABASE_URL='<DATABASE_URL_UNPOOLED>' uv run alembic upgrade head
+DATABASE_URL='<DATABASE_URL_UNPOOLED>' uv run alembic current
+DATABASE_URL='<DATABASE_URL_UNPOOLED>' uv run python -m app.cli.seed_admin
+```
+
+- Production: run the migration before merging a PR that ships one, then run
+  `seed_admin` once for the first admin.
+- Preview: each preview deployment gets its own Neon branch copied from
+  production, so it already has production's schema. A PR that adds a
+  migration needs the same command run against that preview branch.
+
+### Known limitations on Vercel
+
+Vercel can run several function instances at once, and this state lives in the
+memory of each instance:
+
+- **WebSocket notifications** reach only clients connected to the same instance.
+  Connections also close when the function reaches its max duration, so clients
+  must reconnect. Email stays the durable channel.
+- **Logout** (`InMemoryTokenDenylist`): a revoked token can still be used on
+  another instance until it expires (`ACCESS_TOKEN_EXPIRE_MINUTES`).
+- **Auth rate limiting** counts per instance, so the effective limit is looser.
+
+A shared store (e.g. Redis from the Vercel Marketplace) would fix all three.
+It is left for a follow-up.
+
 ## Seed the First Admin
 
 `POST /auth/register` always creates a `member` (see `AuthService.register`)

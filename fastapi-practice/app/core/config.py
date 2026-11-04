@@ -54,6 +54,10 @@ class Settings(BaseSettings):
     # Guards /auth/login and /auth/register against brute-force/spam.
     auth_rate_limit_max_attempts: int = 5
     auth_rate_limit_window_seconds: int = 60
+    # Key the limiter on the `x-vercel-forwarded-for` header instead of the
+    # socket peer. Only turn on behind Vercel, which overwrites that header
+    # with the real client IP; anywhere else a client could spoof it.
+    trust_proxy_headers: bool = False
 
     # Email (SMTP) — used by `EmailNotifier`/`SMTPEmailSender` (see
     # `app/core/notifications.py`). Left unset in dev/test: `main.py`'s

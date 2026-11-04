@@ -8,7 +8,7 @@ from sqlmodel import Session
 
 # Local application
 # core
-from app.core.config import get_settings
+from app.core.config import Settings, get_settings
 from app.core.db import get_session
 from app.core.exceptions import ForbiddenError, TooManyRequestsError, UnauthorizedError
 from app.core.notifications import get_notifier
@@ -236,9 +236,20 @@ def require_admin(user: UserRead = Depends(get_current_user)) -> UserRead:
     return user
 
 
-def rate_limit_auth(request: Request) -> None:
+def _client_ip(request: Request, trust_proxy_headers: bool) -> str:
+    """Client IP for rate limiting. Behind Vercel the socket peer can be
+    Vercel's own infrastructure, so read `x-vercel-forwarded-for`, which
+    Vercel overwrites with the real client IP (first entry if it's a list)."""
+    if trust_proxy_headers:
+        forwarded = request.headers.get("x-vercel-forwarded-for")
+        if forwarded:
+            return forwarded.split(",")[0].strip()
+    return request.client.host if request.client else "unknown"
+
+
+def rate_limit_auth(request: Request, settings: Settings = Depends(get_settings)) -> None:
     """Guards `/auth/login` and `/auth/register` against brute-force/spam,
     keyed by client IP. See `core/rate_limiter.py`."""
-    key = request.client.host if request.client else "unknown"
+    key = _client_ip(request, settings.trust_proxy_headers)
     if not get_rate_limiter().is_allowed(key):
         raise TooManyRequestsError()

@@ -22,8 +22,16 @@ from app.core.config import get_settings
 
 settings = get_settings()
 
-connect_args = {"check_same_thread": False} if settings.database_url.startswith("sqlite") else {}
-engine = create_engine(settings.database_url, echo=False, connect_args=connect_args)
+_is_sqlite = settings.database_url.startswith("sqlite")
+connect_args = {"check_same_thread": False} if _is_sqlite else {}
+# On Postgres, check a pooled connection before use: Neon's pooler and its
+# scale-to-zero can close idle connections that the pool still holds.
+engine = create_engine(
+    settings.database_url,
+    echo=False,
+    connect_args=connect_args,
+    pool_pre_ping=not _is_sqlite,
+)
 
 
 @event.listens_for(Engine, "connect")
