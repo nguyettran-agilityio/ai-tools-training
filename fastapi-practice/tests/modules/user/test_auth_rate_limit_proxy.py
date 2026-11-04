@@ -6,8 +6,9 @@ instead. Off (the default), the header is ignored so it can't be spoofed.
 """
 
 import pytest
+from fastapi.testclient import TestClient
 
-from app.core.config import get_settings
+from app.core.config import Settings, get_settings
 from app.core.deps import rate_limit_auth
 from app.main import app
 
@@ -67,6 +68,19 @@ class TestTrustProxyHeadersOn:
 
         assert blocked.status_code == 429
 
+    @pytest.mark.parametrize("trust", [True, False])
+    def test_fallback_keys_on_each_socket_peer(self, rate_limited_client, trust):
+        """Without the header, two different socket peers get separate
+        counters, so the fallback really is `request.client.host`, not a
+        constant."""
+        _trust_proxy_headers(trust)
+        peer_a = TestClient(app, client=("198.51.100.1", 50000))
+        peer_b = TestClient(app, client=("198.51.100.2", 50000))
+        _exhaust(peer_a, {})
+
+        assert peer_a.post("/auth/login", json=_PAYLOAD).status_code == 429
+        assert peer_b.post("/auth/login", json=_PAYLOAD).status_code == 401
+
 
 class TestTrustProxyHeadersOff:
     def test_ignores_the_forwarded_header(self, rate_limited_client):
@@ -81,4 +95,9 @@ class TestTrustProxyHeadersOff:
         assert blocked.status_code == 429
 
     def test_is_the_default(self):
-        assert get_settings().trust_proxy_headers is False
+        # `_env_file=None`: check the code default, not the local `.env`.
+        settings = Settings(
+            _env_file=None, jwt_secret_key="test-secret-key-with-at-least-32-characters"
+        )
+
+        assert settings.trust_proxy_headers is False
