@@ -2,6 +2,10 @@
 
 Library management API (FastAPI, SQLModel, SQLite). When extending a module, match the existing layering. `app/modules/category/` is the canonical example.
 
+## North star
+
+Every library business rule has tests, and every change reaches dev via PR with green CI.
+
 ## Commands
 
 ```bash
@@ -43,6 +47,7 @@ uv run pre-commit run --all-files   # config: ../.pre-commit-config.yaml (git ro
 
 ## Rules (MANDATORY)
 
+- Read docs/decisions.md before changing a design. When a PR settles a new decision, add one line to it in the same PR.
 - `services.py` never imports `fastapi`. Services raise exceptions from `core/exceptions.py` and the global handler maps them to HTTP codes: `AlreadyExistsError` for duplicate creation (email, ISBN, category name, book already borrowed, reservation already open), plain `ConflictError` for other conflicts (deleting a referenced row, borrow limit reached).
 - Success responses have no envelope. Declare `response_model` and return the schema. Error body is `{code, message, errors}`, built by the global handler. Never repeat the status code in the body.
 - Declare static routes before routes with a path param.
