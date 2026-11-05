@@ -1,0 +1,22 @@
+# Decisions
+
+Settled decisions, taken from the "Decisions" sections of PRs merged into `dev` (and commit bodies). One line per decision. When a PR settles a new decision, add one line here in the same PR.
+
+| Decision | Reason | PR |
+|---|---|---|
+| A member's own open reservation on a book does not block renewing their loan; only another member's open (pending/notified) reservation does. | `ReservationService.create` allows reserving a book you currently hold. | [#18](https://github.com/nguyettran-agilityio/ai-tools-training/pull/18) |
+| Concurrent renewals are an accepted race condition: `mark_renewed` is a plain update, not a conditional `WHERE renewed_at IS NULL`. | Both requests read the same old due date and write the same new value, so the loan is still extended only once. | [#18](https://github.com/nguyettran-agilityio/ai-tools-training/pull/18) |
+| The five identical fake `update()` bodies in `tests/fakes.py` are not deduplicated into a generic base. | A generic fake base is a refactor beyond #22. | [#29](https://github.com/nguyettran-agilityio/ai-tools-training/pull/29) |
+| `tests.cli.test_seed_demo` gets its own mypy override that disables only `attr-defined`. | `Borrowing.book_id.in_(...)` is the same SQLModel query-expression false positive already disabled for `app.cli.seed_demo`. | [#31](https://github.com/nguyettran-agilityio/ai-tools-training/pull/31) |
+| Only the fixture needed for the `is_actve` typo check is annotated; annotating the other fixtures is tracked in #30. | — | [#31](https://github.com/nguyettran-agilityio/ai-tools-training/pull/31) |
+| B-40-1: `borrowing_ban.updated_at` changes only when `banned_until` actually changes (replaces Q-40-3). | Newer BA decision on #40. | [#47](https://github.com/nguyettran-agilityio/ai-tools-training/pull/47), [#48](https://github.com/nguyettran-agilityio/ai-tools-training/pull/48) |
+| `BorrowingBanRead` includes `created_at`, for internal use only; no endpoint returns it. | — | [#48](https://github.com/nguyettran-agilityio/ai-tools-training/pull/48) |
+| With `late_return_ban_days = 0`, a late return still writes a ban row with `banned_until = returned_at`; that row is never active (Q-40-1). | — | [#48](https://github.com/nguyettran-agilityio/ai-tools-training/pull/48) |
+| An active ban does not block deleting a user; the ban row is removed by FK cascade (Q-40-8b). | — | [#48](https://github.com/nguyettran-agilityio/ai-tools-training/pull/48) |
+| B-42-1: the overdue and late-returns reports use a per-page user/book cache (each distinct user and book looked up once per page); no N+1/JOIN change, and `notify_overdue` is left unchanged. | Agreed in B-42-1. | [#47](https://github.com/nguyettran-agilityio/ai-tools-training/pull/47), [#51](https://github.com/nguyettran-agilityio/ai-tools-training/pull/51) |
+| B-42-2: a date-only `to` covers the whole UTC day (`23:59:59.999999Z`, inclusive) and `from > to` is checked against that bound; a `to` with a time part keeps its literal meaning; a date-only `from` stays at midnight UTC. | New BA decision; replaces the earlier Dev Q2 answer, which kept midnight. | [#47](https://github.com/nguyettran-agilityio/ai-tools-training/pull/47), [#49](https://github.com/nguyettran-agilityio/ai-tools-training/pull/49) |
+| The report service raises `LookupError` when a row's user or book is missing, instead of returning a null email or title. | Borrowings cascade on user and book delete, so this cannot happen; the service fails loudly. | [#49](https://github.com/nguyettran-agilityio/ai-tools-training/pull/49) |
+| Report bounds with any offset are converted with `astimezone(UTC)` before filtering. | SQLite ignores offsets when comparing. | [#49](https://github.com/nguyettran-agilityio/ai-tools-training/pull/49) |
+| `from > to` returns 400 `BAD_REQUEST` with `errors: null`; an invalid `from`, `to`, `page` or `pageSize` returns 422 `VALIDATION_ERROR`. | — | [#49](https://github.com/nguyettran-agilityio/ai-tools-training/pull/49) |
+| A concurrent double return is out of scope for the overdue penalty work; it is tracked in #50. | The race predates #48 and needs a conditional update with a rowcount check. | [#51](https://github.com/nguyettran-agilityio/ai-tools-training/pull/51) |
+| Every datetime write goes through the repositories as UTC, including the demo seed (#44). | SQLite compares stored datetimes as strings, so date comparison is only safe with UTC writes. | [#51](https://github.com/nguyettran-agilityio/ai-tools-training/pull/51) |
